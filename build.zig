@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
     const zbgfx = b.dependency("zbgfx", .{});
     exe.root_module.addImport("zbgfx", zbgfx.module("zbgfx"));
     exe.linkLibrary(zbgfx.artifact("bgfx"));
-    b.installArtifact(zbgfx.artifact("shaderc"));
+    //b.installArtifact(zbgfx.artifact("shaderc"));
 
     b.installArtifact(exe);
 

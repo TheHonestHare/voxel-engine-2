@@ -6,7 +6,10 @@
             .url = "https://github.com/zig-gamedev/zig-gamedev/archive/6edba005925e4858830dcadcdd4faa795641096d.zip",
             .hash = "1220ba58cd0ff364c28ee33f299690c6f0155fc2c17e1dea5c77370e07579519a24e",
         },
-        .zbgfx = .{.path = "lib/zbgfx-main"},
+        .zbgfx = .{
+            .url = "https://github.com/TheHonestHare/zbgfx/archive/refs/heads/main.zip",
+            .hash = "1220fd8e73ee19b87cd510f253a702d3ba1e59bb7b241791a391870962194413083e",
+        },
     },
 
     .paths = .{

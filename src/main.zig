@@ -1,103 +1,60 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const util = @import("util.zig");
 const zglfw = @import("zglfw");
 const zbgfx = @import("zbgfx");
 const bgfx = zbgfx.bgfx;
 
-const enable_debug = builtin.mode == .Debug;
+const render = @import("render/bgfx_backend/render.zig");
 
 const WIDTH = 800;
 const HEIGHT = 600;
+const ORIGINAL_TITLE = "Voxel engine";
 
 pub const std_options: std.Options = .{
     .log_scope_levels = &.{
-        .{.scope =.bgfx, .level = .warn },
+        .{ .scope = .bgfx, .level = .warn },
     },
 };
 
-const init_log = std.log.scoped(.init);
-
-// TODO: find out what this code actually does
-var bgfx_callbacks = zbgfx.callbacks.CCallbackInterfaceT{
-    .vtable = &zbgfx.callbacks.DefaultZigCallbackVTable.toVtbl(),
-};
-var bgfx_alloc: zbgfx.callbacks.ZigAllocator = undefined;
-
 pub fn main() !void {
-    const t = std.time.microTimestamp();
+    var t = std.time.microTimestamp();
     try zglfw.init();
     defer zglfw.terminate();
     zglfw.windowHintTyped(.client_api, .no_api);
-    const window = try zglfw.Window.create(WIDTH, HEIGHT, "Voxel engine", null);
+    const window: *zglfw.Window = try .create(WIDTH, HEIGHT, ORIGINAL_TITLE, null);
     defer window.destroy();
     _ = window.setKeyCallback(keyCallback);
-    const t2 = std.time.microTimestamp();
+    var t2 = std.time.microTimestamp();
+    util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
 
-    init_log.debug("zglfw setup took {d}us", .{t2 - t});
+    t = std.time.microTimestamp();
+    render.init(window);
+    t2 = std.time.microTimestamp();
+    util.init_logger.debug("render setup took {d}us", .{t2 - t});
+    defer render.deinit();
 
-    // TODO: is this undefined valid?
-    var bgfx_init: bgfx.Init = undefined;
-    bgfx.initCtor(&bgfx_init);
+    var title_buff: if (util.enable_debug) [100]u8 else void = undefined;
+    var title_update_timer = if (util.enable_debug) std.time.Timer.start() catch unreachable else {};
 
-    const framebuffer_size = window.getFramebufferSize();
-    bgfx_init.resolution.width = @intCast(framebuffer_size[0]);
-    bgfx_init.resolution.height = @intCast(framebuffer_size[1]);
-    bgfx_init.debug = enable_debug;
-    
-    // FIXME: apparently this will panic according to the examples
-    // bgfx_alloc = zbgfx.callbacks.ZigAllocator.init(&_allocator);
-    // bgfx_init.allocator = &bgfx_alloc;
-
-    bgfx_init.callback = &bgfx_callbacks;
-
-    bgfx_init.platformData.ndt = null;
-    switch (builtin.target.os.tag) {
-        .linux => {
-            bgfx_init.platformData.type = bgfx.NativeWindowHandleType.Default;
-            bgfx_init.platformData.nwh = @ptrFromInt(zglfw.getX11Window(window));
-            bgfx_init.platformData.ndt = zglfw.getX11Display();
-        },
-        .windows => {
-            bgfx_init.platformData.nwh = zglfw.getWin32Window(window);
-        },
-        else => |v| if (v.isDarwin()) {
-            bgfx_init.platformData.nwh = zglfw.getCocoaWindow(window);
-        },
-    }
-
-    // init bgfx
-    _ = bgfx.renderFrame(-1);
-    if(!bgfx.init(&bgfx_init)) exitWithError("Failed to init bgfx", .{});
-    defer bgfx.shutdown();
-    
-    bgfx.setViewClear(0,bgfx.ClearFlags_Color | bgfx.ClearFlags_Depth, 0x00FF0000, 1.0, 0);
-
-    const reset_flags = bgfx.ResetFlags_None;
-    // TODO: put this behind a flag
-    // reset_flags |= bgfx.ResetFlags_Vsync;
-
-    //
-    // Reset and clear
-    //
-    bgfx.reset(bgfx_init.resolution.width, bgfx_init.resolution.height, reset_flags, bgfx_init.resolution.format);
-    
     while (!window.shouldClose()) {
+
+        // print frame time to title
+        if (util.enable_debug) blk: {
+            // update every half second so its readable
+            if (title_update_timer.read() > std.time.ns_per_s / 2) {
+                title_update_timer.reset();
+                const sub_buff = std.fmt.bufPrintZ(&title_buff, ORIGINAL_TITLE ++ "    [Frame time: {d}us]", .{render.getFrameTime()}) catch break :blk;
+                window.setTitle(sub_buff);
+            }
+        }
         zglfw.pollEvents();
-        bgfx.touch(0);
-        bgfx.setViewRect(0, 0, 0, WIDTH, HEIGHT);
-
-        // false turns off frame capturing
-        _ = bgfx.frame(false);
+        render.draw();
     }
-}
-
-fn exitWithError(comptime fmt_str: []const u8, args: anytype) noreturn {
-    init_log.err(fmt_str, args);
-    std.process.exit(1);
 }
 
 fn keyCallback(window: *zglfw.Window, key: zglfw.Key, scancode: i32, action: zglfw.Action, mods: zglfw.Mods) callconv(.C) void {
     _ = scancode; // keeping for future
     _ = mods; // keeping for future
-    if(key == .escape and action == .press) window.setShouldClose(true);
+    if (key == .escape and action == .press) window.setShouldClose(true);
 }

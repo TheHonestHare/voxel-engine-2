@@ -36,6 +36,7 @@ pub fn main() !void {
 
     var title_buff: if (util.enable_debug) [100]u8 else void = undefined;
     var title_update_timer = if (util.enable_debug) std.time.Timer.start() catch unreachable else {};
+    var fps: u32 = 0;
 
     while (!window.shouldClose()) {
 
@@ -44,12 +45,14 @@ pub fn main() !void {
             // update every half second so its readable
             if (title_update_timer.read() > std.time.ns_per_s / 2) {
                 title_update_timer.reset();
-                const sub_buff = std.fmt.bufPrintZ(&title_buff, ORIGINAL_TITLE ++ "    [Frame time: {d}us]", .{render.getFrameTime()}) catch break :blk;
+                const sub_buff = std.fmt.bufPrintZ(&title_buff, ORIGINAL_TITLE ++ "    [Frame time: {d}ms  |  FPS: {d}]", .{ render.getFrameTimeMs(), fps * 2 }) catch break :blk;
                 window.setTitle(sub_buff);
+                fps = 0;
             }
         }
         zglfw.pollEvents();
         render.draw();
+        fps += 1;
     }
 }
 

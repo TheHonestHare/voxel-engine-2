@@ -12,8 +12,6 @@ var bgfx_callbacks = zbgfx.callbacks.CCallbackInterfaceT{
 var bgfx_alloc: zbgfx.callbacks.ZigAllocator = undefined;
 var bgfx_init: bgfx.Init = undefined;
 
-var frame_time: u64 = 0;
-
 pub fn init(window: *zglfw.Window) void {
     // TODO: is this undefined valid?
     //var bgfx_init: bgfx.Init = undefined;
@@ -64,16 +62,14 @@ pub fn deinit() void {
 }
 
 pub fn draw() void {
-    // if we're on a system without a timer how tf are we gonna draw a voxel engine lmao + we're in debug so release modes should be fine
-    var timer = if (util.enable_debug) std.time.Timer.start() catch unreachable else {};
     bgfx.touch(0);
     bgfx.setViewRect(0, 0, 0, @intCast(bgfx_init.resolution.width), @intCast(bgfx_init.resolution.height));
 
     // false turns off frame capturing
     _ = bgfx.frame(false);
-    if (util.enable_debug) frame_time = timer.read() / 1000;
 }
 
-pub fn getFrameTime() u64 {
-    return frame_time;
+pub fn getFrameTimeMs() u64 {
+    const stats = bgfx.getStats();
+    return @as(u64, @intCast(stats.*.cpuTimeFrame)) / std.time.us_per_ms;
 }

@@ -27,69 +27,36 @@ const BigChunk = struct {
     comptime {
         std.debug.assert(CHUNK_TO_BLOCK == 8);
     }
+    // TODO: create a custom MultiArrayList which can handle bare unions
     /// storage of all chunks in no particular order, to be indexed by the indices
     chunk_list: std.MultiArrayList(Chunk),
     /// storage for indices of where to find data, of length 32x32x32
     chunk_indices: [*]ChunkIndex,
 
+    /// 8x8x8 array of the block data, or an index to the next empty node if empty
     const Chunk = struct {
         pub const Resolution = enum { high, mid, low };
 
-        pub const high_to_mid_masks = blk: {
-            // init return with all 0's
-            var result: [4 * 4 * 4]std.bit_set.StaticBitSet(std.meta.Int(.unsigned, 8 * 8 * 8)) = undefined;
-            @memset(&std.mem.sliceAsBytes(&result), 0);
-
-            for (0..4 * 4 * 4) |bits| {
-                const correct_y = bits & 0b11_00_00;
-                const correct_z = bits & 0b00_11_00;
-                const correct_x = bits & 0b00_00_11;
-                for (0..8) |y| {
-                    if (y / 2 != correct_y) continue;
-                    for (0..8) |z| {
-                        if (z / 2 != correct_z) continue;
-                        for (0..8) |x| {
-                            if (x / 2 != correct_x) continue;
-                            result[bits].set(getIndexWithResolution(x, y, z, .high));
-                        }
-                    }
-                }
-            }
-            break :blk result;
-        };
-
-        pub const mid_to_low_masks = blk: {
-            // init return with all 0's
-            var result: [2 * 2 * 2]std.bit_set.StaticBitSet(std.meta.Int(.unsigned, 4 * 4 * 4)) = undefined;
-            @memset(&std.mem.sliceAsBytes(&result), 0);
-
-            for (0..2 * 2 * 2) |bits| {
-                const correct_y = bits & 0b100;
-                const correct_z = bits & 0b010;
-                const correct_x = bits & 0b001;
-                for (0..4) |y| {
-                    if (y / 2 != correct_y) continue;
-                    for (0..4) |z| {
-                        if (z / 2 != correct_z) continue;
-                        for (0..4) |x| {
-                            if (x / 2 != correct_x) continue;
-                            result[bits].set(getIndexWithResolution(x, y, z, .mid));
-                        }
-                    }
-                }
-            }
-            break :blk result;
-        };
-
         /// data specific to each block (eg material)
         unique_data: [8 * 8 * 8]UniqueBlockData,
-        // TODO: profile difference between a 512 bit integer and 64
+        // TODO: profile difference between a 512 bit integer and array of 64 bit integer
         /// highest res bitmap for whether a block is empty. Laid out lowest x -> z -> y
         high: std.bit_set.ArrayBitSet(u64, 8 * 8 * 8),
         /// mid res bitmap for whether a 2x2x2 subchunk is empty. Laid out lowest x -> z -> y
         mid: std.bit_set.IntegerBitSet(4 * 4 * 4),
         /// low res bitmap for whether a 4x4x4 subchunk is empty. Laid out lowest x -> z -> y
         low: std.bit_set.IntegerBitSet(2 * 2 * 2),
+        /// index back into the sparse array
+        sparse_array_index: u27,
+
+        pub fn isListNode(low: std.bit_set.IntegerBitSet(2 * 2 * 2)) bool {
+            return low.mask == 0;
+        }
+
+        pub fn getNextEmptyIndex(mid: std.bit_set.IntegerBitSet(4 * 4 * 4), low: std.bit_set.IntegerBitSet(2 * 2 * 2)) ?u64 {
+            if(!isListNode(low)) return null;
+            return mid.mask;
+        }
 
         pub inline fn getIndexWithResolution(x: u3, y: u3, z: u3, res: Resolution) u9 {
             const scale_factor = switch (res) {
@@ -101,7 +68,7 @@ const BigChunk = struct {
             return y_ * CHUNK_TO_BLOCK * CHUNK_TO_BLOCK + z_ * CHUNK_TO_BLOCK + x_;
         }
 
-        pub fn isSubEmpty(self: *const Chunk, x: u3, y: u3, z: u3, res: Resolution) bool {
+        pub fn isSubEmpty(self: *const Chunk, x: u3, y: u3, z: u3, comptime res: Resolution) bool {
             const index = getIndexWithResolution(x, y, z, res);
             return switch (res) {
                 .high => self.high.isSet(index),
@@ -110,66 +77,103 @@ const BigChunk = struct {
             };
         }
 
-        /// returns true if the entire chunk can be freed
-        pub fn setEmpty(self: *const Chunk, x: u3, y: u3, z: u3) bool {
-            self.high.unset(getIndexWithResolution(x, y, z, .high));
-            return self.propogateUpdate(x, y, z);
-        }
-
-        pub fn addBlock(self: *const Chunk, x: u3, y: u3, z: u3, data: UniqueBlockData) void {
-            const index = getIndexWithResolution(x, y, z, .high);
-            self.unique_data[index] = data;
-            self.high.set(index);
-            std.debug.assert(!self.propogateUpdate()); // we should never be able to free if we add blocks
-        }
-
-        /// returns true if the entire chunk can be freed
-        pub fn propogateUpdate(self: *const Chunk, x: u3, y: u3, z: u3) bool {
-            const mid_index = getIndexWithResolution(x, y, z, .mid);
-            const low_index = getIndexWithResolution(x, y, z, .low);
-
-            if (self.shouldMidBeSet(x, y, z) != self.mid.isSet(mid_index)) {
-                self.mid.toggle(mid_index);
-
-                if (self.shouldLowBeSet(x, y, z) != self.low.isSet(low_index)) {
-                    self.low.toggle(low_index);
-                }
-            }
-            return self.low.mask == 0;
-        }
-
-        pub fn shouldMidBeSet(self: *const Chunk, x: u3, y: u3, z: u3) bool {
+        /// tests if mid should be set using HIGH mask
+        pub fn shouldMidBeSet(high: *const std.bit_set.ArrayBitSet(u64, 8 * 8 * 8), x: u3, y: u3, z: u3) bool {
             // check the bottom square
             const base_mask = 0b11_00_00_00_11 << (z / 2 * 2 * 8 + x / 2 * 2);
-            if (!self.high.masks[y / 2 * 2] & base_mask > 0) return false;
+            if (!high.masks[y / 2 * 2] & base_mask > 0) return false;
             // check the top square
-            return self.high.masks[y / 2 * 2 + 1] & base_mask > 0;
+            return high.masks[y / 2 * 2 + 1] & base_mask > 0;
         }
 
-        pub fn shouldLowBeSet(self: *const Chunk, x: u3, y: u3, z: u3) bool {
+        /// tests if low should be set using MID mask
+        /// you should probably always do shouldMidBeSet logic first so mid is up to date
+        pub fn shouldLowBeSet(mid: std.bit_set.IntegerBitSet(4 * 4 * 4), x: u3, y: u3, z: u3) bool {
             // check the bottom square
-            const base_mask = blk: {
+            const mask: u64 = blk: {
+                std.debug.assert(0xF == 0b1111);
+                std.debug.assert(0xC == 0b1100);
+                std.debug.assert(0x0 == 0b0000);
+                // create a mask for the bottom most layer
                 // x mask
-                var mask1 = 0x0000_0000_FFFF_FFFF;
+                var mask1 = 0x00_00_FF_FF;
                 if (x > 3) mask1 = ~mask1;
                 // z mask
-                var mask2 = 0x0F0F_0F0F_0F0F_0F0F;
+                var mask2 = 0xCC_CC_CC_CC;
                 if (z > 3) mask2 = ~mask2;
 
-                break :blk mask1 & mask2;
+                var mask = mask1 & mask2;
+                // include the second layer as well
+                mask = mask | (mask << 1 * 4 * 4);
+                // put it at correct y level
+                mask <<= y / 2 * 2;
+
+                break :blk mask;
             };
-            if (!self.high.masks[y / 2 * 2] & base_mask > 0) return false;
-            // check the top square
-            return self.high.masks[y / 2 * 2 + 1] & base_mask > 0;
+            return mid.mask & mask > 0;
         }
     };
+
+    pub const CoordInt = std.math.IntFittingRange(0, BIG_CHUNK_TO_BLOCK);
+
+    pub fn calculateChunkIndex(x: CoordInt, y: CoordInt, z: CoordInt) u27 {
+        return y * BIG_CHUNK_TO_CHUNK * BIG_CHUNK_TO_CHUNK + z * BIG_CHUNK_TO_CHUNK + x;
+    }
+
+    /// returns true if the entire big chunk can be freed
+    pub fn setBlockEmpty(self: *const BigChunk, x: CoordInt, y: CoordInt, z: CoordInt) bool {
+        // first checks if the entire chunk is non empty
+        if(self.chunk_indices[calculateChunkIndex(x, y, z)].getIndex()) |big_index| {
+            // unsets the block in the high res bitmap
+            const slices = self.chunk_list.slice();
+            const high_bitmap_ptr = &slices.items(.high)[big_index];
+            const mid_bitmap_ptr = &slices.items(.mid)[big_index];
+            const low_bitmap_ptr = &slices.items(.low)[big_index];
+
+            const chunk_x, const chunk_y, const chunk_z = .{x % BIG_CHUNK_TO_CHUNK, y % BIG_CHUNK_TO_CHUNK, z % BIG_CHUNK_TO_CHUNK};
+
+            const high_index = Chunk.getIndexWithResolution(chunk_x, chunk_y, chunk_z, .high);
+            const mid_index = Chunk.getIndexWithResolution(chunk_x, chunk_y, chunk_z, .mid);
+            const low_index = Chunk.getIndexWithResolution(chunk_x, chunk_y, chunk_z, .low);
+
+            // if the chunk could have been freed it would have happened already
+            if(Chunk.isListNode(low_bitmap_ptr.*)) return false;
+            high_bitmap_ptr.unset(high_index);
+
+            if(Chunk.shouldMidBeSet(high_bitmap_ptr, chunk_x, chunk_y, chunk_z) == mid_bitmap_ptr.isSet(mid_index)) return false;
+            mid_bitmap_ptr.toggle(mid_index);
+
+            if(Chunk.shouldLowBeSet(mid_bitmap_ptr, chunk_x, chunk_y, chunk_z)) return false;
+            low_bitmap_ptr.toggle(low_index);
+
+            // TODO: use a deferred cleanup
+            if(low_bitmap_ptr.mask != 0) return false;
+            // the chunk has been completely emptied and should be freed
+            const sparse_index_to_update = self.chunk_list.items(.sparse_array_index)[self.chunk_list.len - 1];
+            self.chunk_list.swapRemove(big_index);
+            self.chunk_indices[sparse_index_to_update].index = big_index;
+            self.chunk_indices[big_index].invalidate();
+        }
+        
+    }
+    // TODO:
+    // pub fn setBlockNonEmpty(self: *const Chunk, x: u3, y: u3, z: u3, data: UniqueBlockData) void {
+    //     const index = getIndexWithResolution(x, y, z, .high);
+    //     self.unique_data[index] = data;
+    //     self.high.set(index);
+    //     std.debug.assert(!self.propogateUpdate()); // we should never be able to free if we add blocks
+    // }
 };
 
 /// index with a sentinel for maxInt(u16)
 const ChunkIndex = packed struct {
     index: u16,
-    pub fn getIndex(self: @This()) ?u16 {
+    pub fn getIndex(self: @This()) u16 {
         return if (self.index == std.math.maxInt(u16)) null else self.index;
+    }
+
+    pub fn invalidate(self: *@This()) void {
+        self.index = std.math.maxInt(u16);
     }
 };
 

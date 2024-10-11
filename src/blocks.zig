@@ -169,7 +169,7 @@ const BigChunk = struct {
         z: BlockCoord,
         y: BlockCoord,
 
-        pub inline fn toChunkCoords(self: BlockInBigCoords) ChunkIndex.ChunkCoords {
+        pub inline fn toChunkCoords(self: BlockInBigCoords) ChunkCoords {
             const scale = CHUNK_TO_BLOCK;
             return .{ .x = self.x / scale, .y = self.y / scale, .z = self.z / scale };
         }
@@ -392,6 +392,16 @@ const UniqueBlockData = struct {
 
 const expectEql = std.testing.expectEqual;
 
+pub fn initExampleWorld(ally: std.mem.Allocator, world_coords: World.BigChunkCoordinate) BigChunk {
+    const big_chunk: BigChunk = .initEmpty(ally);
+    std.debug.assert(0 <= world_coords.x and world_coords.x < 32);
+    std.debug.assert(0 <= world_coords.x and world_coords.z < 32);
+    std.debug.assert(0 <= world_coords.x and world_coords.y < 32);
+
+    big_chunk.setBlockData(ally, .{.x = world_coords.x * 15, .y = world_coords.y, .z = 31 - world_coords.z}, undefined);
+    return big_chunk;
+}
+
 test "Empty World" {
     const world: World = try .init(std.testing.allocator, .{ .x = -3, .z = -2, .y = 1 }, .{ .x = -2, .z = 3, .y = 3 }, &BigChunk.initEmptyWrapper);
     defer world.deinit();
@@ -404,6 +414,24 @@ test "Empty World" {
     for (world.big_chunks) |*big_chunk| {
         for (big_chunk.chunk_indices[0 .. 32 * 32 * 32]) |index| {
             try std.testing.expect(index.getIndex() == null);
+        }
+    }
+}
+
+test "Single Block in each big chunk" {
+    const world: World = try .init(std.testing.allocator, .{ .x = 10, .z = 1, .y = 1 }, .{ .x = 20, .z = 2, .y = 2 }, &initExampleWorld);
+    defer world.deinit();
+
+    for (world.big_chunks, 10..) |*big_chunk, expected_x| {
+        const nonempty_coords: BigChunk.BlockInBigCoords = .{
+            .x = expected_x * 15,
+            .z = 31 - 1,
+            .y = 1,
+        };
+        const nonempty_index = nonempty_coords.toChunkCoords().toIndex();
+        for (big_chunk.chunk_indices[0 .. 32 * 32 * 32]) |index| {
+
+            try expect(index.getIndex() != null);
         }
     }
 }

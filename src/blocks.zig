@@ -65,7 +65,7 @@ pub const World = struct {
     }
 
     pub fn deinit(self: *const World) void {
-        for(self.big_chunks) |*big_chunk| {
+        for (self.big_chunks) |*big_chunk| {
             big_chunk.deinit(self.ally);
         }
         self.ally.free(self.big_chunks);
@@ -82,10 +82,9 @@ pub const World = struct {
             @intCast(topright.y - botleft.y),
         };
     }
-    
-    /// parameters are 3 BLOCK coordinates
-    pub fn setBlockEmpty(self: *const World, x: i64, z: i64, y: i64) (error{OutOfBoundingBox} || std.mem.Allocator.Error) ! void {
 
+    /// parameters are 3 BLOCK coordinates
+    pub fn setBlockEmpty(self: *const World, x: i64, z: i64, y: i64) (error{OutOfBoundingBox} || std.mem.Allocator.Error)!void {
         const big_chunk_coordinate: BigChunkCoordinate = .{
             @divFloor(x, BIG_CHUNK_TO_BLOCK),
             @divFloor(z, BIG_CHUNK_TO_BLOCK),
@@ -99,8 +98,7 @@ pub const World = struct {
         });
     }
 
-    pub fn setBlockData(self: *const World, x: i64, z: i64, y: i64, data: UniqueBlockData) (error{OutOfBoundingBox} || std.mem.Allocator.Error) ! void {
-
+    pub fn setBlockData(self: *const World, x: i64, z: i64, y: i64, data: UniqueBlockData) (error{OutOfBoundingBox} || std.mem.Allocator.Error)!void {
         const big_chunk_coordinate: BigChunkCoordinate = .{
             @divFloor(x, BIG_CHUNK_TO_BLOCK),
             @divFloor(z, BIG_CHUNK_TO_BLOCK),
@@ -118,11 +116,9 @@ pub const World = struct {
     pub fn big_chunks_index(botleft: BigChunkCoordinate, topright: BigChunkCoordinate, coords: BigChunkCoordinate) error{OutOfBoundingBox}!usize {
 
         // assert that the coords land within the world box
-        if(!(
-            botleft.x <= coords.x and coords.x < topright.x and
+        if (!(botleft.x <= coords.x and coords.x < topright.x and
             botleft.z <= coords.z and coords.z < topright.z and
-            botleft.y <= coords.y and coords.y < topright.y
-        )) return error.OutOfBoundingBox;
+            botleft.y <= coords.y and coords.y < topright.y)) return error.OutOfBoundingBox;
 
         const x_len, const z_len, _ = bounding_lengths(botleft, topright);
         // these are `coords` but with botleft as 0, 0, 0

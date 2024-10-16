@@ -164,18 +164,18 @@ const BigChunk = struct {
         self.update_list.deinit(ally);
     }
 
-    pub const BlockInBigCoords = packed struct(u27) {
+    pub const BlockInBigCoords = packed struct(u24) {
         x: BlockCoord,
         z: BlockCoord,
         y: BlockCoord,
 
         pub inline fn toChunkCoords(self: BlockInBigCoords) ChunkCoords {
             const scale = CHUNK_TO_BLOCK;
-            return .{ .x = self.x / scale, .y = self.y / scale, .z = self.z / scale };
+            return .{ .x = @intCast(self.x / scale), .y = @intCast(self.y / scale), .z = @intCast(self.z / scale) };
         }
 
         pub inline fn toChunkSubCoords(self: BlockInBigCoords) Chunk.SubCoords {
-            return .{ .x = self.x % CHUNK_TO_BLOCK, .y = self.y % CHUNK_TO_BLOCK, .z = self.z % CHUNK_TO_BLOCK };
+            return .{ .x = @intCast(self.x % CHUNK_TO_BLOCK), .y = @intCast(self.y % CHUNK_TO_BLOCK), .z = @intCast(self.z % CHUNK_TO_BLOCK) };
         }
     };
 
@@ -225,9 +225,9 @@ const BigChunk = struct {
     }
 
     /// Sets a blocks unique data to data. Cannot be the "empty block"
-    pub fn setBlockData(self: *const BigChunk, ally: std.mem.Allocator, coords: BlockInBigCoords, data: UniqueBlockData) std.mem.Allocator.Error!void {
+    pub fn setBlockData(self: *BigChunk, ally: std.mem.Allocator, coords: BlockInBigCoords, data: UniqueBlockData) std.mem.Allocator.Error!void {
         //const x, const y, const z = .{coords.x, coords.y, coords.z};
-        const big_index = coords.toIndex();
+        const big_index = coords.toChunkCoords().toIndex();
 
         const index = if (self.chunk_indices[big_index].getIndex()) |index| blk: {
             @branchHint(.likely);
@@ -241,7 +241,8 @@ const BigChunk = struct {
             slice.items(.low)[new_index] = .initEmpty();
             slice.items(.mid)[new_index] = .initEmpty();
             slice.items(.high)[new_index] = .initEmpty();
-            slice.items(.sparse_array_index)[new_index] = coords.toChunkCoords();
+            slice.items(.sparse_array_index)[new_index] = coords.toChunkCoords().toIndex();
+            self.chunk_indices[big_index] = .{.index = big_index};
             break :blk new_index;
         };
 
@@ -250,9 +251,9 @@ const BigChunk = struct {
         slice.items(.low)[index].set(sub_coords.toResIndex(.low));
         slice.items(.mid)[index].set(sub_coords.toResIndex(.mid));
         slice.items(.high)[index].set(sub_coords.toResIndex(.high));
-        slice.items(.unique_data)[index][sub_coords] = data;
+        slice.items(.unique_data)[index][sub_coords.toIndex()] = data;
 
-        self.update_list.append(ally, coords.toChunkCoords());
+        try self.update_list.append(ally, coords.toChunkCoords());
     }
 };
 
@@ -350,8 +351,9 @@ pub const Chunk = struct {
                 .mid => 2,
                 .low => 4,
             };
-            const x_, const y_, const z_ = .{ x / scale_factor, y / scale_factor, z / scale_factor };
-            return y_ * CHUNK_TO_BLOCK * CHUNK_TO_BLOCK + z_ * CHUNK_TO_BLOCK + x_;
+            const inv_scale = CHUNK_TO_BLOCK / scale_factor;
+            const x_: u9, const y_: u9, const z_: u9 = .{ x / scale_factor, y / scale_factor, z / scale_factor };
+            return y_ * inv_scale * inv_scale + z_ * inv_scale + x_;
         }
     };
 
@@ -392,13 +394,13 @@ const UniqueBlockData = struct {
 
 const expectEql = std.testing.expectEqual;
 
-pub fn initExampleWorld(ally: std.mem.Allocator, world_coords: World.BigChunkCoordinate) BigChunk {
-    const big_chunk: BigChunk = .initEmpty(ally);
+pub fn initExampleWorld(ally: std.mem.Allocator, world_coords: World.BigChunkCoordinate) error{OutOfMemory}!BigChunk {
+    var big_chunk: BigChunk = try .initEmpty(ally);
     std.debug.assert(0 <= world_coords.x and world_coords.x < 32);
     std.debug.assert(0 <= world_coords.x and world_coords.z < 32);
     std.debug.assert(0 <= world_coords.x and world_coords.y < 32);
 
-    big_chunk.setBlockData(ally, .{.x = world_coords.x * 15, .y = world_coords.y, .z = 31 - world_coords.z}, undefined);
+    try big_chunk.setBlockData(ally, .{.x = @intCast(world_coords.x), .y = @intCast(world_coords.y), .z = @intCast(31 - world_coords.z)}, .{ .material = 1 });
     return big_chunk;
 }
 
@@ -424,14 +426,18 @@ test "Single Block in each big chunk" {
 
     for (world.big_chunks, 10..) |*big_chunk, expected_x| {
         const nonempty_coords: BigChunk.BlockInBigCoords = .{
-            .x = expected_x * 15,
+            .x = @intCast(expected_x),
             .z = 31 - 1,
             .y = 1,
         };
         const nonempty_index = nonempty_coords.toChunkCoords().toIndex();
+        var count: usize = 0;
         for (big_chunk.chunk_indices[0 .. 32 * 32 * 32]) |index| {
-
-            try expect(index.getIndex() != null);
+            if(index.getIndex()) |should_be_nonempty| {
+                try expectEql(should_be_nonempty, nonempty_index);
+                count += 1;
+            }
         }
+        try std.testing.expectEqual(1, count);
     }
 }

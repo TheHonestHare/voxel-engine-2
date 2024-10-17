@@ -235,14 +235,14 @@ const BigChunk = struct {
         } else blk: {
             @branchHint(.unlikely);
             // we must create a chunk
-            const new_index = try self.chunk_list.addOne(ally);
+            const new_index: u16 = @intCast(try self.chunk_list.addOne(ally));
             const slice = self.chunk_list.slice();
 
             slice.items(.low)[new_index] = .initEmpty();
             slice.items(.mid)[new_index] = .initEmpty();
             slice.items(.high)[new_index] = .initEmpty();
             slice.items(.sparse_array_index)[new_index] = coords.toChunkCoords().toIndex();
-            self.chunk_indices[big_index] = .{.index = big_index};
+            self.chunk_indices[big_index] = .{.index = new_index};
             break :blk new_index;
         };
 
@@ -299,9 +299,9 @@ pub const Chunk = struct {
     // TODO: test this I'm suspicious
     /// tests if mid should be set using HIGH mask
     pub fn shouldMidBeSet(high: *const std.bit_set.ArrayBitSet(u64, 8 * 8 * 8), coords: SubCoords) bool {
-        const x, const y, const z = .{ coords.x, coords.y, coords.z };
+        const x: u32, const y: u32, const z: u32 = .{ coords.x, coords.y, coords.z };
         // check the bottom square
-        const base_mask = 0b11_00_00_00_11 << (z / 2 * 2 * 8 + x / 2 * 2);
+        const base_mask = @as(u32, 0b11_00_00_00_11) << @intCast(z / 2 * 2 * 8 + x / 2 * 2);
         if (!high.masks[y / 2 * 2] & base_mask > 0) return false;
         // check the top square
         return high.masks[y / 2 * 2 + 1] & base_mask > 0;
@@ -310,7 +310,7 @@ pub const Chunk = struct {
     /// tests if low should be set using MID mask
     /// you should probably always do shouldMidBeSet logic first so mid is up to date
     pub fn shouldLowBeSet(mid: std.bit_set.IntegerBitSet(4 * 4 * 4), coords: SubCoords) bool {
-        const x, const y, const z = .{ coords.x, coords.y, coords.z };
+        const x: u32, const y: u32, const z: u32 = .{ coords.x, coords.y, coords.z };
         // check the bottom square
         const mask: u64 = blk: {
             std.debug.assert(0xF == 0b1111);
@@ -318,17 +318,17 @@ pub const Chunk = struct {
             std.debug.assert(0x0 == 0b0000);
             // create a mask for the bottom most layer
             // x mask
-            const mask1 = 0x00_00_FF_FF;
+            var mask1: u32 = 0x00_00_FF_FF;
             if (x > 3) mask1 = ~mask1;
             // z mask
-            const mask2 = 0xCC_CC_CC_CC;
+            var mask2: u32 = 0xCC_CC_CC_CC;
             if (z > 3) mask2 = ~mask2;
 
             var mask = mask1 & mask2;
             // include the second layer as well
             mask = mask | (mask << 1 * 4 * 4);
             // put it at correct y level
-            mask <<= y / 2 * 2;
+            mask <<= @intCast(y / 2 * 2);
 
             break :blk mask;
         };
@@ -424,17 +424,25 @@ test "Single Block in each big chunk" {
     const world: World = try .init(std.testing.allocator, .{ .x = 10, .z = 1, .y = 1 }, .{ .x = 20, .z = 2, .y = 2 }, &initExampleWorld);
     defer world.deinit();
 
-    for (world.big_chunks, 10..) |*big_chunk, expected_x| {
+    for (world.big_chunks, 10..) |big_chunk, expected_x| {
         const nonempty_coords: BigChunk.BlockInBigCoords = .{
             .x = @intCast(expected_x),
             .z = 31 - 1,
             .y = 1,
         };
-        const nonempty_index = nonempty_coords.toChunkCoords().toIndex();
+        const nonempty_chunk = nonempty_coords.toChunkCoords().toIndex();
         var count: usize = 0;
-        for (big_chunk.chunk_indices[0 .. 32 * 32 * 32]) |index| {
+        for (big_chunk.chunk_indices[0 .. 32 * 32 * 32], 0..) |index, curr_chunk| {
             if(index.getIndex()) |should_be_nonempty| {
-                try expectEql(should_be_nonempty, nonempty_index);
+                try expectEql(nonempty_chunk, curr_chunk);
+                const sub_coords = nonempty_coords.toChunkSubCoords();
+                const sub_chunk = big_chunk.chunk_list.get(should_be_nonempty);
+                for(0..CHUNK_TO_BLOCK * CHUNK_TO_BLOCK * CHUNK_TO_BLOCK) |i_| {
+                    const i: u9 = @intCast(i_);
+                    try expectEql(sub_chunk.high.isSet(sub_coords.toResIndex(.high)), i == sub_coords.toIndex());
+                    try expectEql(sub_chunk.mid.isSet(sub_coords.toResIndex(.mid)), Chunk.shouldMidBeSet(&sub_chunk.high, @bitCast(i)));
+                    try expectEql(sub_chunk.low.isSet(sub_coords.toResIndex(.low)), Chunk.shouldLowBeSet(sub_chunk.mid, @bitCast(i)));
+                }
                 count += 1;
             }
         }

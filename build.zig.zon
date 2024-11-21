@@ -2,13 +2,13 @@
     .name = "voxel-engine-2",
     .version = "0.0.0",
     .dependencies = .{
-        .zig_gamedev = .{
-            .url = "https://github.com/zig-gamedev/zig-gamedev/archive/6edba005925e4858830dcadcdd4faa795641096d.zip",
-            .hash = "1220ba58cd0ff364c28ee33f299690c6f0155fc2c17e1dea5c77370e07579519a24e",
+        .zgpu = .{
+            .url = "https://github.com/zig-gamedev/zgpu/archive/66aa9c55b19742f1a3878f0fcb5934ff6c2b9097.zip",
+            .hash = "122000237553ff091a98d0ddcf62abaf83db74ad3db9806900d762e6b29ec138bcfa",
         },
-        .zbgfx = .{
-            .url = "https://github.com/TheHonestHare/zbgfx/archive/refs/heads/main.zip",
-            .hash = "1220fd8e73ee19b87cd510f253a702d3ba1e59bb7b241791a391870962194413083e",
+        .zglfw = .{
+            .url = "https://github.com/zig-gamedev/zglfw/archive/ce756faacf52c7531bc09bdc0201004596c0a01f.zip",
+            .hash = "1220a4d35f5b9b3f711853950c70ca372f0806421d78a7539e95249e03a49bca0ac2",
         },
     },
 

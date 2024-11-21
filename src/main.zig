@@ -2,10 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const util = @import("util.zig");
 const zglfw = @import("zglfw");
-const zbgfx = @import("zbgfx");
-const bgfx = zbgfx.bgfx;
 
-const render = @import("render/bgfx_backend/render.zig");
+const render = @import("render/zgpu_backend/render.zig");
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -13,7 +11,6 @@ const ORIGINAL_TITLE = "Voxel engine";
 
 pub const std_options: std.Options = .{
     .log_scope_levels = &.{
-        .{ .scope = .bgfx, .level = .warn },
     },
 };
 
@@ -29,7 +26,11 @@ pub fn main() !void {
     util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
 
     t = std.time.microTimestamp();
-    render.init(window);
+
+    // TODO: choose better allocator based on release or debug
+    const gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    const ally = gpa.allocator();
+    render.init(window, ally);
     t2 = std.time.microTimestamp();
     util.init_logger.debug("render setup took {d}us", .{t2 - t});
     defer render.deinit();

@@ -10,8 +10,7 @@ const HEIGHT = 600;
 const ORIGINAL_TITLE = "Voxel engine";
 
 pub const std_options: std.Options = .{
-    .log_scope_levels = &.{
-    },
+    .log_scope_levels = &.{},
 };
 
 pub fn main() !void {
@@ -28,7 +27,7 @@ pub fn main() !void {
     t = std.time.microTimestamp();
 
     // TODO: choose better allocator based on release or debug
-    const gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
     const ally = gpa.allocator();
     render.init(window, ally);
     t2 = std.time.microTimestamp();

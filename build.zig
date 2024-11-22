@@ -12,11 +12,11 @@ pub fn build(b: *std.Build) void {
     });
 
     @import("zgpu").addLibraryPathsTo(exe);
-    const zgpu = b.dependency("zgpu", .{.target = target, .optimize = optimize});
+    const zgpu = b.dependency("zgpu", .{ .target = target, .optimize = optimize });
     exe.root_module.addImport("zgpu", zgpu.module("root"));
     exe.linkLibrary(zgpu.artifact("zdawn"));
 
-    const zglfw = b.dependency("zglfw", .{.target = target, .optimize = optimize});
+    const zglfw = b.dependency("zglfw", .{ .target = target, .optimize = optimize });
     exe.root_module.addImport("zglfw", zglfw.module("root"));
     exe.linkLibrary(zglfw.artifact("glfw"));
 

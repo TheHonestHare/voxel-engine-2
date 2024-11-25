@@ -28,11 +28,12 @@ pub fn main() !void {
 
     // TODO: choose better allocator based on release or debug
     var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.deinit();
     const ally = gpa.allocator();
     render.init(window, ally);
     t2 = std.time.microTimestamp();
     util.init_logger.debug("render setup took {d}us", .{t2 - t});
-    defer render.deinit();
+    defer render.deinit(ally);
 
     var title_buff: if (util.enable_debug) [100]u8 else void = undefined;
     var title_update_timer = if (util.enable_debug) std.time.Timer.start() catch unreachable else {};

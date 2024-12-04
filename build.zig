@@ -20,6 +20,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("zglfw", zglfw.module("root"));
     exe.linkLibrary(zglfw.artifact("glfw"));
 
+    const zmath = b.dependency("zmath", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("zmath", zmath.module("root"));
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

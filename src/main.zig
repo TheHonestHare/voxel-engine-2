@@ -1,9 +1,9 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const util = @import("util.zig");
 const zglfw = @import("zglfw");
 
 const render = @import("render/zgpu_backend/render.zig");
+const input = @import("input.zig");
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -20,7 +20,7 @@ pub fn main() !void {
     zglfw.windowHintTyped(.client_api, .no_api);
     const window: *zglfw.Window = try .create(WIDTH, HEIGHT, ORIGINAL_TITLE, null);
     defer window.destroy();
-    _ = window.setKeyCallback(keyCallback);
+    _ = window.setKeyCallback(input.keyCallback);
     var t2 = std.time.microTimestamp();
     util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
 
@@ -55,10 +55,4 @@ pub fn main() !void {
         render.draw();
         fps += 1;
     }
-}
-
-fn keyCallback(window: *zglfw.Window, key: zglfw.Key, scancode: i32, action: zglfw.Action, mods: zglfw.Mods) callconv(.C) void {
-    _ = scancode; // keeping for future
-    _ = mods; // keeping for future
-    if (key == .escape and action == .press) window.setShouldClose(true);
 }

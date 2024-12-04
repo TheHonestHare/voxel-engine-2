@@ -35,6 +35,10 @@
             .hash = "1220b1f02f2f7edd98a078c64e3100907d90311d94880a3cc5927e1ac009d002667a",
             .lazy = true,
         },
+        .zmath = .{
+            .url = "https://github.com/zig-gamedev/zmath/archive/refs/heads/main.zip",
+            .hash = "1220081d55b58b968d953db1afc2fb01b2f5733929144e69522461ce25fa6450d84e",
+        },
     },
 
     .paths = .{

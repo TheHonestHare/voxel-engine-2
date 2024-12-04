@@ -1,20 +1,16 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const util = @import("util.zig");
 const zglfw = @import("zglfw");
-const zbgfx = @import("zbgfx");
-const bgfx = zbgfx.bgfx;
 
-const render = @import("render/bgfx_backend/render.zig");
+const render = @import("render/zgpu_backend/render.zig");
+const input = @import("input.zig");
 
 const WIDTH = 800;
 const HEIGHT = 600;
 const ORIGINAL_TITLE = "Voxel engine";
 
 pub const std_options: std.Options = .{
-    .log_scope_levels = &.{
-        .{ .scope = .bgfx, .level = .warn },
-    },
+    .log_scope_levels = &.{},
 };
 
 pub fn main() !void {
@@ -24,15 +20,20 @@ pub fn main() !void {
     zglfw.windowHintTyped(.client_api, .no_api);
     const window: *zglfw.Window = try .create(WIDTH, HEIGHT, ORIGINAL_TITLE, null);
     defer window.destroy();
-    _ = window.setKeyCallback(keyCallback);
+    _ = window.setKeyCallback(input.keyCallback);
     var t2 = std.time.microTimestamp();
     util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
 
     t = std.time.microTimestamp();
-    render.init(window);
+
+    // TODO: choose better allocator based on release or debug
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.deinit();
+    const ally = gpa.allocator();
+    render.init(window, ally);
     t2 = std.time.microTimestamp();
     util.init_logger.debug("render setup took {d}us", .{t2 - t});
-    defer render.deinit();
+    defer render.deinit(ally);
 
     var title_buff: if (util.enable_debug) [100]u8 else void = undefined;
     var title_update_timer = if (util.enable_debug) std.time.Timer.start() catch unreachable else {};
@@ -54,10 +55,4 @@ pub fn main() !void {
         render.draw();
         fps += 1;
     }
-}
-
-fn keyCallback(window: *zglfw.Window, key: zglfw.Key, scancode: i32, action: zglfw.Action, mods: zglfw.Mods) callconv(.C) void {
-    _ = scancode; // keeping for future
-    _ = mods; // keeping for future
-    if (key == .escape and action == .press) window.setShouldClose(true);
 }

@@ -242,7 +242,7 @@ const BigChunk = struct {
             slice.items(.mid)[new_index] = .initEmpty();
             slice.items(.high)[new_index] = .initEmpty();
             slice.items(.sparse_array_index)[new_index] = coords.toChunkCoords().toIndex();
-            self.chunk_indices[big_index] = .{.index = new_index};
+            self.chunk_indices[big_index] = .{ .index = new_index };
             break :blk new_index;
         };
 
@@ -400,7 +400,7 @@ pub fn initExampleWorld(ally: std.mem.Allocator, world_coords: World.BigChunkCoo
     std.debug.assert(0 <= world_coords.x and world_coords.z < 32);
     std.debug.assert(0 <= world_coords.x and world_coords.y < 32);
 
-    try big_chunk.setBlockData(ally, .{.x = @intCast(world_coords.x), .y = @intCast(world_coords.y), .z = @intCast(31 - world_coords.z)}, .{ .material = 1 });
+    try big_chunk.setBlockData(ally, .{ .x = @intCast(world_coords.x), .y = @intCast(world_coords.y), .z = @intCast(31 - world_coords.z) }, .{ .material = 1 });
     return big_chunk;
 }
 
@@ -433,11 +433,11 @@ test "Single Block in each big chunk" {
         const nonempty_chunk = nonempty_coords.toChunkCoords().toIndex();
         var count: usize = 0;
         for (big_chunk.chunk_indices[0 .. 32 * 32 * 32], 0..) |index, curr_chunk| {
-            if(index.getIndex()) |should_be_nonempty| {
+            if (index.getIndex()) |should_be_nonempty| {
                 try expectEql(nonempty_chunk, curr_chunk);
                 const sub_coords = nonempty_coords.toChunkSubCoords();
                 const sub_chunk = big_chunk.chunk_list.get(should_be_nonempty);
-                for(0..CHUNK_TO_BLOCK * CHUNK_TO_BLOCK * CHUNK_TO_BLOCK) |i_| {
+                for (0..CHUNK_TO_BLOCK * CHUNK_TO_BLOCK * CHUNK_TO_BLOCK) |i_| {
                     const i: u9 = @intCast(i_);
                     try expectEql(sub_chunk.high.isSet(sub_coords.toResIndex(.high)), i == sub_coords.toIndex());
                     try expectEql(sub_chunk.mid.isSet(sub_coords.toResIndex(.mid)), Chunk.shouldMidBeSet(&sub_chunk.high, @bitCast(i)));

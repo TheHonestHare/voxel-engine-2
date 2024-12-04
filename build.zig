@@ -11,25 +11,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // magic to make glfw work
-    // TODO: don't do this, use the separate zig-gamedev repos once they are created
-    const zig_gd_dep = b.dependency("zig_gamedev", .{});
-    {
-        exe.step.owner = zig_gd_dep.builder;
-        defer exe.step.owner = b;
+    @import("zgpu").addLibraryPathsTo(exe);
+    const zgpu = b.dependency("zgpu", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("zgpu", zgpu.module("root"));
+    exe.linkLibrary(zgpu.artifact("zdawn"));
 
-        const zglfw_dep = zig_gd_dep.builder.dependency("zglfw", .{
-            .target = target,
-            .optimize = optimize,
-        });
-        exe.root_module.addImport("zglfw", zglfw_dep.module("root"));
-        exe.linkLibrary(zglfw_dep.artifact("glfw"));
-    }
+    const zglfw = b.dependency("zglfw", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("zglfw", zglfw.module("root"));
+    exe.linkLibrary(zglfw.artifact("glfw"));
 
-    const zbgfx = b.dependency("zbgfx", .{});
-    exe.root_module.addImport("zbgfx", zbgfx.module("zbgfx"));
-    exe.linkLibrary(zbgfx.artifact("bgfx"));
-    //b.installArtifact(zbgfx.artifact("shaderc"));
+    const zmath = b.dependency("zmath", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("zmath", zmath.module("root"));
 
     b.installArtifact(exe);
 

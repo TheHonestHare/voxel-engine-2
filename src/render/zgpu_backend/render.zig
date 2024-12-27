@@ -12,7 +12,7 @@ var constants_bindgroup_h: zgpu.BindGroupHandle = undefined;
 var constants_buffer_h: zgpu.BufferHandle = undefined;
 var uniform_bindgroup_h: zgpu.BindGroupHandle = undefined;
 var vertex_buffer_h: zgpu.BufferHandle = undefined;
-var camera: Camera = undefined;
+pub var camera: Camera = undefined;
 
 const Vertex = extern struct { pos: [2]f32 };
 
@@ -26,7 +26,7 @@ const test_vs =
     \\  @group(0) @binding(0) var<uniform> perspective_mat: mat4x4<f32>;
     \\  @group(1) @binding(0) var<uniform> camera_transform_mat: mat4x4<f32>;
     \\  @vertex fn main(@location(0) pos: vec2<f32>) -> @builtin(position) vec4<f32> {
-    \\      let orig_pos = vec4f(pos, -5, 1);
+    \\      let orig_pos = vec4f(pos, -2, 1);
     \\      return perspective_mat * camera_transform_mat * orig_pos;
     \\  }
 ;
@@ -214,7 +214,6 @@ pub fn draw() void {
     defer commands.release();
     gctx.submit(&.{commands});
     _ = gctx.present(); // TODO: don't ignore
-    camera.yaw += 0.01;
 }
 
 pub fn getFrameTimeMs() u64 {

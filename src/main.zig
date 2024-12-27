@@ -18,8 +18,10 @@ pub fn main() !void {
     try zglfw.init();
     defer zglfw.terminate();
     zglfw.windowHintTyped(.client_api, .no_api);
+    zglfw.windowHintTyped(.center_cursor, true);
     const window: *zglfw.Window = try .create(WIDTH, HEIGHT, ORIGINAL_TITLE, null);
     defer window.destroy();
+    //window.setInputMode(.raw_mouse_motion, true);
     _ = window.setKeyCallback(input.keyCallback);
     var t2 = std.time.microTimestamp();
     util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
@@ -53,6 +55,7 @@ pub fn main() !void {
         }
         zglfw.pollEvents();
         render.draw();
+        input.updateCameraPosition(window);
         fps += 1;
     }
 }

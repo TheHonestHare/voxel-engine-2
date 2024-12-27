@@ -42,7 +42,7 @@ pub fn getCameraSpaceMat(camera: *const Camera) zmath.Mat {
     const dir_vec = dir_vec: {
         const original_dir = zmath.loadArr3(.{ 1, 0, 0 });
         const yawed_dir = zmath.mul(zmath.rotationY(camera.yaw), original_dir);
-        break :dir_vec zmath.mul(zmath.rotationZ(camera.pitch), yawed_dir);
+        break :dir_vec zmath.mul(zmath.rotationX(camera.pitch), yawed_dir);
     };
     const up_vec = up_vec: {
         const original_dir = zmath.loadArr3(.{ 0, 1, 0 });

@@ -37,7 +37,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
     // TODO: u32 might be too small
     var y: u32 = 0;
     var i: usize = undefined;
-    try self.chunk_data.append(chunk_ally, .{ .block_materials = undefined, .mesh = &.{} });
+    try self.chunk_data.append(chunk_ally, .{ .block_materials = undefined, .mesh = &.{}, .chunk_coords = undefined });
     // TODO: multithread this because yes
     while(y < dims[1]) {
         defer y += 1;
@@ -50,6 +50,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
         // I'm pretty sure this is safe because we ensureUnusedCapacity beforehand but this should be tested
         const material_slice = slice.items(.block_materials).ptr;
         const mesh_slice = slice.items(.mesh).ptr;
+        const chunk_coords_slice = slice.items(.chunk_coords).ptr;
         //const bitmap_slice = slice.items(.block_bitmap).ptr;
         //bitmap_slice[i] = .initEmpty();
         var z: u32 = 0;
@@ -79,6 +80,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
                 // }
                 self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = @intCast(i);
                 mesh_slice[i] = try Chunk.generateMesh(chunk_ally, &material_slice[i]);
+                chunk_coords_slice[i] = .{x, y, z};
 
                 i = self.chunk_data.addOneAssumeCapacity();
                 //bitmap_slice[i] = .initEmpty();
@@ -297,6 +299,7 @@ pub const Chunk = struct {
     //block_bitmap: BlockBitmap,
     /// allocated with world allocator
     mesh: []Face,
+    chunk_coords: [3]u32,
     
     // TODO: add culling, make 1000x faster
     /// returns the vertices and an index buffer

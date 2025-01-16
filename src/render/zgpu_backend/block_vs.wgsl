@@ -1,8 +1,7 @@
 @group(0) @binding(0) var<uniform> perspective_mat: mat4x4<f32>;
 @group(1) @binding(0) var<uniform> camera_transform_mat: mat4x4<f32>;
 @group(2) @binding(0) var<storage, read> faces: array<u32, max_face_count>;
-
-const chunk_pos = vec3u(0, 0, 0);
+@group(2) @binding(1) var<storage, read> chunk_pos: vec3u;
 
 // pub const Face = packed struct(u32) {
 //     pub const Direction = enum(u3) {
@@ -94,7 +93,7 @@ struct VertexOut {
     let rel_vertex_position = vec3u(vertices_position[extractBits(face_int, 12, 3)][index_rel]);
     let subchunk_position = (vec3u(face_int) >> vec3u(0, 4, 8)) & vec3u(0xF);
     
-    let worldspace_position_3u = chunk_pos + subchunk_position + rel_vertex_position;
+    let worldspace_position_3u = chunk_pos * 16 + subchunk_position + rel_vertex_position;
     let worldspace_position = vec4f(vec4u(worldspace_position_3u, 1));
 
     let pos = perspective_mat * camera_transform_mat * worldspace_position;

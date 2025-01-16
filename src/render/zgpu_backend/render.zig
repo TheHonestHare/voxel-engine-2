@@ -60,7 +60,7 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     const layouts = try BindGroups.init();
     defer layouts.releaseLayouts();
 
-    world = try World.init(ally, .{1, 1, 1}, undefined, struct {
+    world = try World.init(ally, .{2, 2, 2}, undefined, struct {
         pub fn populate(block_materials: *World.Chunk.BlockMaterials, x: u32, y: u32, z: u32, userpointer: *anyopaque) ?void {
             _ = x;
             _ = y;

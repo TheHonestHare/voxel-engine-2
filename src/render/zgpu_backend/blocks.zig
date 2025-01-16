@@ -8,11 +8,15 @@ pub const INDEX_PER_FACE = 6;
 const SPARE_CHUNKS = 10;
 
 pub const State = struct {
-    max_required_faces: u32,
+    constants: struct {
+        max_required_faces: u32,
+        chunk_data_single_inst_size: usize,
+    },
     pipeline: zgpu.RenderPipelineHandle,
     index_buffer_h: zgpu.BufferHandle,
     face_data_buffer_h: zgpu.BufferHandle,
-    face_bindgroup_h: zgpu.BindGroupHandle,
+    chunk_data_buffer_h: zgpu.BufferHandle,
+    bindgroup_h: zgpu.BindGroupHandle,
     world: *const World,
 };
 
@@ -46,20 +50,22 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         index_buffer.unmap();
     }
 
+    const chunk_count = world.chunk_data.len - 1;
+
     const face_data_buffer_h = gctx.createBuffer(.{
         .label = "Block face data",
         .mapped_at_creation = true,
-        .size = min_faces_buffer_size * (world.chunk_data.len),
+        .size = min_faces_buffer_size * chunk_count,
         .usage = .{
             .storage = true,
-        }
+        },
     });
 
     // populate the face data buffer with all data
     {
         const face_data_buffer = gctx.lookupResource(face_data_buffer_h) orelse return error.ResourceCreationFailure;
         const max_faces_and_padding = util.roundUp(max_required_faces, min_align_storage / @sizeOf(World.Chunk.Face));
-        const mapped_face_buffer = face_data_buffer.getMappedRange(World.Chunk.Face, 0, min_faces_buffer_size * world.chunk_data.len / @sizeOf(World.Chunk.Face)).?;
+        const mapped_face_buffer = face_data_buffer.getMappedRange(World.Chunk.Face, 0, min_faces_buffer_size * chunk_count / @sizeOf(World.Chunk.Face)).?;
 
         for(world.chunk_data.items(.mesh)[1..], 0..) |mesh, i| {
             std.debug.assert(mesh.len <= max_required_faces);
@@ -68,8 +74,35 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         face_data_buffer.unmap();
     }
 
+    const ChunkCoords = [3]u32;
+
+    const chunk_data_single_inst_size = util.roundUp(@sizeOf(ChunkCoords), min_align_storage);
+
+    const chunk_data_buffer_h = gctx.createBuffer(.{
+        .label = "Chunk coordinate buffer",
+        .mapped_at_creation = true,
+        .size = chunk_data_single_inst_size * chunk_count,
+        .usage = .{
+            .storage = true,
+        },
+    });
+
+    // populate the chunk data buffer with coordinates for each chunk
+    {
+        const chunk_data_buffer = gctx.lookupResource(chunk_data_buffer_h) orelse return error.ResourceCreationFailure;
+        const mapped_buffer = chunk_data_buffer.getMappedRange(u32, 0, chunk_data_single_inst_size * chunk_count / @sizeOf(u32)).?;
+
+        var curr_offset: usize = 0;
+        for(world.chunk_data.items(.chunk_coords)[1..]) |chunk_coord| {
+            @memcpy(mapped_buffer[curr_offset..curr_offset+3], &chunk_coord);
+            curr_offset += chunk_data_single_inst_size / @sizeOf(u32);
+        }
+        chunk_data_buffer.unmap();
+    }
+
     const bindgroup_layout_h = gctx.createBindGroupLayout(&.{
         zgpu.bufferEntry(0, .{.vertex = true}, .read_only_storage, true, 0),
+        zgpu.bufferEntry(1, .{.vertex = true}, .read_only_storage, true, 0),
     });
     defer gctx.releaseResource(bindgroup_layout_h);
 
@@ -78,6 +111,11 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
             .binding = 0,
             .buffer_handle = face_data_buffer_h,
             .size = @sizeOf([max_required_faces]World.Chunk.Face)
+        },
+        .{
+            .binding = 1,
+            .buffer_handle = chunk_data_buffer_h,
+            .size = chunk_data_single_inst_size,
         },
     });
     const render_pipeline_h = blk: {
@@ -115,26 +153,36 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         break :blk gctx.createRenderPipeline(pipeline_layout_h, pipeline_desc);
     };
     return .{
+        .constants = .{
+            .max_required_faces = max_required_faces,
+            .chunk_data_single_inst_size = chunk_data_single_inst_size,
+        },
         .world = world,
-        .max_required_faces = max_required_faces,
         .pipeline = render_pipeline_h,
         .index_buffer_h = index_buffer_h,
         .face_data_buffer_h = face_data_buffer_h,
-        .face_bindgroup_h = bindgroup_h,
+        .chunk_data_buffer_h = chunk_data_buffer_h,
+        .bindgroup_h = bindgroup_h,
     };
 }
 
 pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPassEncoder) !void {
     const pipeline = gctx.lookupResource(state.pipeline) orelse return error.FailedLookup;
     const index_buffer = gctx.lookupResource(state.index_buffer_h) orelse return error.FailedLookup;
-    const face_bindgroup = gctx.lookupResource(state.face_bindgroup_h) orelse return error.FailedLookup;
+    const bindgroup = gctx.lookupResource(state.bindgroup_h) orelse return error.FailedLookup;
     
-    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * state.max_required_faces);
+    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * state.constants.max_required_faces);
     pass.setPipeline(pipeline);
 
     // TODO: draw multiple chunks
 
-    pass.setBindGroup(2, face_bindgroup, &.{0});
-    const mesh_slice = state.world.chunk_data.get(1).mesh;
-    pass.drawIndexed(@intCast(mesh_slice.len * INDEX_PER_FACE), 1, 0, 0, 0);
+    const mesh_slice = state.world.chunk_data.items(.mesh)[1..];
+
+    for(0..state.world.chunk_data.len-1) |i| {
+        const face_dyn_offset = i * @sizeOf(World.Chunk.Face) * state.constants.max_required_faces;
+        const chunk_data_dyn_offset = i * state.constants.chunk_data_single_inst_size;
+
+        pass.setBindGroup(2, bindgroup, &.{@intCast(face_dyn_offset), @intCast(chunk_data_dyn_offset)});
+        pass.drawIndexed(@intCast(mesh_slice[i].len * INDEX_PER_FACE), 1, 0, 0, 0);
+    }
 }

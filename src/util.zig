@@ -10,7 +10,6 @@ pub fn exitWithError(logger: anytype, comptime fmt_str: []const u8, args: anytyp
     std.process.exit(1);
 }
 
-pub fn roundUp(n: anytype, multiple: @TypeOf(n)) @TypeOf(n) {
-    if(@typeInfo(@TypeOf(n)) != .int) @compileError("roundUp only should be used for integers");
+pub fn roundUp(n: anytype, multiple: anytype) @TypeOf(n, multiple) {
     return ((n + multiple - 1)) / multiple * multiple;
 }

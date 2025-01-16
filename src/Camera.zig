@@ -22,8 +22,8 @@ pub fn test_defaults(pos: [3]f32, asp_rat: f32) Camera {
         .fov = math.degreesToRadians(70),
         .asp_rat = asp_rat,
         // TODO: sensible defaults
-        .near = 0.5,
-        .far = 200,
+        .near = 0.01,
+        .far = 1000,
     };
 }
 
@@ -40,13 +40,13 @@ pub fn getCameraSpaceMat(camera: *const Camera) zmath.Mat {
     const pos_vec = zmath.loadArr3(camera.pos);
 
     const dir_vec = dir_vec: {
-        const original_dir = zmath.loadArr3(.{ 1, 0, 0 });
-        const yawed_dir = zmath.mul(zmath.rotationY(camera.yaw), original_dir);
-        break :dir_vec zmath.mul(zmath.rotationX(camera.pitch), yawed_dir);
+        const original_dir = zmath.loadArr3(.{0, 0, 1 });
+        const pitched_dir = zmath.mul(zmath.rotationX(camera.pitch), original_dir);
+        break :dir_vec zmath.mul(zmath.rotationY(camera.yaw), pitched_dir);
     };
     const up_vec = up_vec: {
         const original_dir = zmath.loadArr3(.{ 0, 1, 0 });
-        break :up_vec zmath.mul(zmath.rotationX(camera.roll), original_dir);
+        break :up_vec zmath.mul(zmath.rotationZ(camera.roll), original_dir);
     };
     return zmath.lookToLh(pos_vec, dir_vec, up_vec);
 }

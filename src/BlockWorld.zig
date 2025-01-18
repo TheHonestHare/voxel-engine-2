@@ -1,12 +1,12 @@
 const std = @import("std");
 
 pub const MaterialIndex = u16;
-pub const ChunkPopulatorFn = *const fn(
-    *Chunk.BlockMaterials, 
-    //*Chunk.BlockBitmap, 
-    x: u32, 
-    y: u32, 
-    z: u32, 
+pub const ChunkPopulatorFn = *const fn (
+    *Chunk.BlockMaterials,
+    //*Chunk.BlockBitmap,
+    x: u32,
+    y: u32,
+    z: u32,
     userpointer: *anyopaque,
 ) ?void;
 
@@ -17,7 +17,6 @@ dims: [3]u16,
 sparse_chunk_grid: []u32,
 /// first element is always garbage and empty
 chunk_data: std.MultiArrayList(Chunk),
-
 
 /// chunk_populator should set the bitmask to 0 first
 /// chunk_populator should return null if the chunk is unempty
@@ -31,7 +30,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
     };
     errdefer self.chunk_arena.deinit();
     const chunk_ally = self.chunk_arena.allocator();
-    // 
+
     self.sparse_chunk_grid = try ally.alloc(u32, dims[0] * dims[1] * dims[2]);
     errdefer ally.free(self.sparse_chunk_grid);
     // TODO: u32 might be too small
@@ -39,7 +38,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
     var i: usize = undefined;
     try self.chunk_data.append(chunk_ally, .{ .block_materials = undefined, .mesh = &.{}, .chunk_coords = undefined });
     // TODO: multithread this because yes
-    while(y < dims[1]) {
+    while (y < dims[1]) {
         defer y += 1;
 
         // for each y-row, we preallocate space for the entire row so no pausing during middle
@@ -54,14 +53,14 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
         //const bitmap_slice = slice.items(.block_bitmap).ptr;
         //bitmap_slice[i] = .initEmpty();
         var z: u32 = 0;
-        while(z < dims[2]) {
+        while (z < dims[2]) {
             defer z += 1;
 
             var x: u32 = 0;
-            while(x < dims[0]) {
+            while (x < dims[0]) {
                 defer x += 1;
 
-                if(chunk_populator(&material_slice[i], x, y, z, userpointer) == null) {
+                if (chunk_populator(&material_slice[i], x, y, z, userpointer) == null) {
                     self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = 0;
                     continue;
                 }
@@ -80,7 +79,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
                 // }
                 self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = @intCast(i);
                 mesh_slice[i] = try Chunk.generateMesh(chunk_ally, &material_slice[i]);
-                chunk_coords_slice[i] = .{x, y, z};
+                chunk_coords_slice[i] = .{ x, y, z };
 
                 i = self.chunk_data.addOneAssumeCapacity();
                 //bitmap_slice[i] = .initEmpty();
@@ -253,7 +252,6 @@ pub fn deinit(self: *@This()) void {
 //     try std.testing.expectEqual(5, right.count());
 // }
 
-
 /// Blocks are organized in x, z, y order
 /// The real stored size is 1 block bigger on all edges to keep track of adjacent chunks edge blocks
 pub const Chunk = struct {
@@ -283,7 +281,7 @@ pub const Chunk = struct {
         y: u4,
         z: u4,
         face: Direction,
-        __padding: u1 = undefined,            
+        __padding: u1 = undefined,
         material: u16, // TODO: use palette compression per chunk, no need to use the full u16 index
     };
 
@@ -291,7 +289,7 @@ pub const Chunk = struct {
         std.debug.assert(x < CHUNK_SIZE and y < CHUNK_SIZE and z < CHUNK_SIZE);
         return @as(MaterialInt, x) + @as(MaterialInt, z) * CHUNK_SIZE + @as(MaterialInt, y) * CHUNK_SIZE * CHUNK_SIZE;
     }
-    
+
     pub const BlockMaterials = [CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE]MaterialIndex;
     const BlockBitmap = std.bit_set.ArrayBitSet(usize, CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ); // TODO: use an array of usize, add padding so each y row starts at byte offset
 
@@ -300,29 +298,29 @@ pub const Chunk = struct {
     /// allocated with world allocator
     mesh: []Face,
     chunk_coords: [3]u32,
-    
+
     // TODO: add culling, make 1000x faster
     /// returns the vertices and an index buffer
     pub fn generateMesh(ally: std.mem.Allocator, materials: *const BlockMaterials) ![]Face {
         var face_data: std.ArrayListUnmanaged(Face) = .empty;
         errdefer face_data.deinit(ally);
         var y: u32 = 0;
-        while(y < CHUNK_SIZE) {
+        while (y < CHUNK_SIZE) {
             defer y += 1;
 
             var z: u32 = 0;
-            while(z < CHUNK_SIZE) {
+            while (z < CHUNK_SIZE) {
                 defer z += 1;
 
                 var x: u32 = 0;
-                while(x < CHUNK_SIZE) {
+                while (x < CHUNK_SIZE) {
                     defer x += 1;
-                    
+
                     // check if air
                     const mat_index = materials[x + z * CHUNK_SIZE + y * CHUNK_SIZE * CHUNK_SIZE];
-                    if(mat_index == 0) continue;
+                    if (mat_index == 0) continue;
 
-                    for(std.enums.values(Face.Direction)) |dir| {
+                    for (std.enums.values(Face.Direction)) |dir| {
                         try face_data.append(ally, .{
                             .x = @intCast(x),
                             .y = @intCast(y),

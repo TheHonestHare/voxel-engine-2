@@ -26,17 +26,17 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
     _ = gctx.device.getLimits(&limits); // TODO: why are we discarding here?
     const min_align_storage = limits.limits.min_storage_buffer_offset_alignment;
     const min_faces_buffer_size = util.roundUp(@as(usize, @sizeOf([max_required_faces]World.Chunk.Face)), min_align_storage);
-    const index_buffer_h = gctx.createBuffer(.{ 
-        .label = "Block index buffer", 
-        .mapped_at_creation = true, 
+    const index_buffer_h = gctx.createBuffer(.{
+        .label = "Block index buffer",
+        .mapped_at_creation = true,
         .size = @sizeOf(u16) * INDEX_PER_FACE * max_required_faces,
-        .usage = .{ .index = true }
+        .usage = .{ .index = true },
     });
     // populate an index buffer with indices that will draw quads
     {
         const index_buffer = gctx.lookupResource(index_buffer_h) orelse return error.ResourceCreationFailure;
         const mapped_index_buffer = index_buffer.getMappedRange([INDEX_PER_FACE]u16, 0, max_required_faces).?;
-        for(mapped_index_buffer, 0..) |*indices, i_usize| {
+        for (mapped_index_buffer, 0..) |*indices, i_usize| {
             const i: u16 = @intCast(i_usize);
             indices.* = .{
                 0 + 4 * i,
@@ -67,9 +67,9 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         const max_faces_and_padding = util.roundUp(max_required_faces, min_align_storage / @sizeOf(World.Chunk.Face));
         const mapped_face_buffer = face_data_buffer.getMappedRange(World.Chunk.Face, 0, min_faces_buffer_size * chunk_count / @sizeOf(World.Chunk.Face)).?;
 
-        for(world.chunk_data.items(.mesh)[1..], 0..) |mesh, i| {
+        for (world.chunk_data.items(.mesh)[1..], 0..) |mesh, i| {
             std.debug.assert(mesh.len <= max_required_faces);
-            @memcpy(mapped_face_buffer[i*max_faces_and_padding..i*max_faces_and_padding + max_required_faces].ptr, mesh);
+            @memcpy(mapped_face_buffer[i * max_faces_and_padding .. i * max_faces_and_padding + max_required_faces].ptr, mesh);
         }
         face_data_buffer.unmap();
     }
@@ -93,25 +93,21 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         const mapped_buffer = chunk_data_buffer.getMappedRange(u32, 0, chunk_data_single_inst_size * chunk_count / @sizeOf(u32)).?;
 
         var curr_offset: usize = 0;
-        for(world.chunk_data.items(.chunk_coords)[1..]) |chunk_coord| {
-            @memcpy(mapped_buffer[curr_offset..curr_offset+3], &chunk_coord);
+        for (world.chunk_data.items(.chunk_coords)[1..]) |chunk_coord| {
+            @memcpy(mapped_buffer[curr_offset .. curr_offset + 3], &chunk_coord);
             curr_offset += chunk_data_single_inst_size / @sizeOf(u32);
         }
         chunk_data_buffer.unmap();
     }
 
     const bindgroup_layout_h = gctx.createBindGroupLayout(&.{
-        zgpu.bufferEntry(0, .{.vertex = true}, .read_only_storage, true, 0),
-        zgpu.bufferEntry(1, .{.vertex = true}, .read_only_storage, true, 0),
+        zgpu.bufferEntry(0, .{ .vertex = true }, .read_only_storage, true, 0),
+        zgpu.bufferEntry(1, .{ .vertex = true }, .read_only_storage, true, 0),
     });
     defer gctx.releaseResource(bindgroup_layout_h);
 
     const bindgroup_h = gctx.createBindGroup(bindgroup_layout_h, &.{
-        .{
-            .binding = 0,
-            .buffer_handle = face_data_buffer_h,
-            .size = @sizeOf([max_required_faces]World.Chunk.Face)
-        },
+        .{ .binding = 0, .buffer_handle = face_data_buffer_h, .size = @sizeOf([max_required_faces]World.Chunk.Face) },
         .{
             .binding = 1,
             .buffer_handle = chunk_data_buffer_h,
@@ -119,7 +115,7 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         },
     });
     const render_pipeline_h = blk: {
-        const pipeline_layout_h = gctx.createPipelineLayout(&.{base_bindgroup_layouts.layouts[0], base_bindgroup_layouts.layouts[1], bindgroup_layout_h});
+        const pipeline_layout_h = gctx.createPipelineLayout(&.{ base_bindgroup_layouts.layouts[0], base_bindgroup_layouts.layouts[1], bindgroup_layout_h });
         defer gctx.releaseResource(pipeline_layout_h);
 
         const vs = zgpu.createWgslShaderModule(gctx.device, std.fmt.comptimePrint("const max_face_count = {d};", .{max_required_faces}) ++ @embedFile("block_vs.wgsl"), "vertex shader");
@@ -131,25 +127,20 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
             .format = zgpu.GraphicsContext.swapchain_format,
         }};
 
-        const pipeline_desc = zgpu.wgpu.RenderPipelineDescriptor{
-            .vertex = .{ .module = vs, .entry_point = "main"},
-            .primitive = .{
-                .cull_mode = .back,
-                .front_face = .ccw,
-                .topology = .triangle_list,
-            },
-            .fragment = &.{
-                .module = fs,
-                .entry_point = "main",
-                .target_count = colour_targets.len,
-                .targets = &colour_targets,
-            },
-            .depth_stencil = &.{
-                .format = .depth32_float,
-                .depth_compare = .less,
-                .depth_write_enabled = true,
-            }
-        };
+        const pipeline_desc = zgpu.wgpu.RenderPipelineDescriptor{ .vertex = .{ .module = vs, .entry_point = "main" }, .primitive = .{
+            .cull_mode = .back,
+            .front_face = .ccw,
+            .topology = .triangle_list,
+        }, .fragment = &.{
+            .module = fs,
+            .entry_point = "main",
+            .target_count = colour_targets.len,
+            .targets = &colour_targets,
+        }, .depth_stencil = &.{
+            .format = .depth32_float,
+            .depth_compare = .less,
+            .depth_write_enabled = true,
+        } };
         break :blk gctx.createRenderPipeline(pipeline_layout_h, pipeline_desc);
     };
     return .{
@@ -170,7 +161,7 @@ pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPas
     const pipeline = gctx.lookupResource(state.pipeline) orelse return error.FailedLookup;
     const index_buffer = gctx.lookupResource(state.index_buffer_h) orelse return error.FailedLookup;
     const bindgroup = gctx.lookupResource(state.bindgroup_h) orelse return error.FailedLookup;
-    
+
     pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * state.constants.max_required_faces);
     pass.setPipeline(pipeline);
 
@@ -178,11 +169,11 @@ pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPas
 
     const mesh_slice = state.world.chunk_data.items(.mesh)[1..];
 
-    for(0..state.world.chunk_data.len-1) |i| {
+    for (0..state.world.chunk_data.len - 1) |i| {
         const face_dyn_offset = i * @sizeOf(World.Chunk.Face) * state.constants.max_required_faces;
         const chunk_data_dyn_offset = i * state.constants.chunk_data_single_inst_size;
 
-        pass.setBindGroup(2, bindgroup, &.{@intCast(face_dyn_offset), @intCast(chunk_data_dyn_offset)});
+        pass.setBindGroup(2, bindgroup, &.{ @intCast(face_dyn_offset), @intCast(chunk_data_dyn_offset) });
         pass.drawIndexed(@intCast(mesh_slice[i].len * INDEX_PER_FACE), 1, 0, 0, 0);
     }
 }

@@ -13,12 +13,12 @@ const World = @import("../../BlockWorld.zig");
 var gctx: *zgpu.GraphicsContext = undefined;
 var world: World = undefined;
 var block_state: blocks.State = undefined;
-var constants_bindgroup_h: zgpu.BindGroupHandle = undefined;
-var constants_buffer_h: zgpu.BufferHandle = undefined;
-var uniform_bindgroup_h: zgpu.BindGroupHandle = undefined;
-var vertex_buffer_h: zgpu.BufferHandle = undefined;
+var constants_bindgroup_h: zgpu.BindGroupHandle = .nil;
+var constants_buffer_h: zgpu.BufferHandle = .nil;
+var uniform_bindgroup_h: zgpu.BindGroupHandle = .nil;
+var vertex_buffer_h: zgpu.BufferHandle = .nil;
 pub var camera: Camera = undefined;
-var depth_texture_h: zgpu.TextureHandle = undefined;
+var depth_texture_h: zgpu.TextureHandle = .nil;
 
 pub fn init(window: *zglfw.Window, ally: std.mem.Allocator) void {
     init_inner(window, ally) catch |e| util.exitWithError(util.init_logger, "Error initiating render pipeline: {any}", .{e});
@@ -81,6 +81,9 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
 }
 
 pub fn createDepthTexture() void {
+    if(std.meta.eql(depth_texture_h, zgpu.TextureHandle.nil)) {
+        gctx.releaseResource(depth_texture_h);
+    }
     depth_texture_h = gctx.createTexture(.{
         .dimension = .tdim_2d,
         .format = .depth32_float,
@@ -183,7 +186,15 @@ pub fn draw() void {
     };
     defer commands.release();
     gctx.submit(&.{commands});
-    _ = gctx.present(); // TODO: don't ignore
+    switch(gctx.present()) {
+        .normal_execution => return,
+        .swap_chain_resized => {
+            createDepthTexture();
+            const constants_buffer = gctx.lookupResource(constants_buffer_h).?;
+            camera.updateAspectRatio(@floatFromInt(gctx.swapchain_descriptor.width), @floatFromInt(gctx.swapchain_descriptor.height));
+            gctx.queue.writeBuffer(constants_buffer, 0, zmath.Mat, &.{camera.getPerspectiveMat()});
+        },
+    }
 }
 
 

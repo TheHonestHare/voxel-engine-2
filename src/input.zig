@@ -11,7 +11,7 @@ var go_down = false;
 pub fn keyCallback(window: *zglfw.Window, key: zglfw.Key, scancode: i32, action: zglfw.Action, mods: zglfw.Mods) callconv(.C) void {
     _ = mods;
     _ = scancode;
-    switch (action) {
+    switch(action) {
         .press => {
             switch (key) {
                 .escape => {

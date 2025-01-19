@@ -60,7 +60,7 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     const layouts = try BindGroups.init();
     defer layouts.releaseLayouts();
 
-    world = try World.init(ally, .{2, 2, 2}, undefined, struct {
+    world = try World.init(ally, .{ 2, 2, 2 }, undefined, struct {
         pub fn populate(block_materials: *World.Chunk.BlockMaterials, x: u32, y: u32, z: u32, userpointer: *anyopaque) ?void {
             _ = x;
             _ = y;
@@ -69,19 +69,19 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
             block_materials.* = @splat(0);
             block_materials[0] = 1;
             const size = World.Chunk.CHUNK_SIZE;
-            inline for(.{7, 6, 5, 4, 3, 6, 6, 4, 4}, .{2, 1, 1, 1, 2, 4, 5, 4, 5}) |x_, y_| {
+            inline for (.{ 7, 6, 5, 4, 3, 6, 6, 4, 4 }, .{ 2, 1, 1, 1, 2, 4, 5, 4, 5 }) |x_, y_| {
                 block_materials[x_ + y_ * size * size] = 1;
             }
             block_materials[1 + 2 * size + 1 * size * size] = 1;
         }
     }.populate);
-    block_state = try blocks.init(gctx, layouts, &world, 1<<10);
+    block_state = try blocks.init(gctx, layouts, &world, 1 << 10);
 
     createDepthTexture();
 }
 
 pub fn createDepthTexture() void {
-    if(std.meta.eql(depth_texture_h, zgpu.TextureHandle.nil)) {
+    if (std.meta.eql(depth_texture_h, zgpu.TextureHandle.nil)) {
         gctx.releaseResource(depth_texture_h);
     }
     depth_texture_h = gctx.createTexture(.{
@@ -186,8 +186,8 @@ pub fn draw() void {
     };
     defer commands.release();
     gctx.submit(&.{commands});
-    switch(gctx.present()) {
-        .normal_execution => return,
+    switch (gctx.present()) {
+        .normal_execution => {},
         .swap_chain_resized => {
             createDepthTexture();
             const constants_buffer = gctx.lookupResource(constants_buffer_h).?;
@@ -196,8 +196,6 @@ pub fn draw() void {
         },
     }
 }
-
-
 
 pub fn getFrameTimeMs() u64 {
     return 0; // TODO: fix this

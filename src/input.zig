@@ -11,7 +11,7 @@ var go_down = false;
 pub fn keyCallback(window: *zglfw.Window, key: zglfw.Key, scancode: i32, action: zglfw.Action, mods: zglfw.Mods) callconv(.C) void {
     _ = mods;
     _ = scancode;
-    switch(action) {
+    switch (action) {
         .press => {
             switch (key) {
                 .escape => {
@@ -55,9 +55,9 @@ pub fn updateCameraPosition(window: *zglfw.Window) void {
     // The particular sin's and cos's are chosen because this is a coordinate system where theta = 0 points in +z, and theta = pi / 2 points in -x
 
     // direction the camera is facing
-    const move_vector_para: [2]f32 = .{-@sin(render.camera.yaw), @cos(render.camera.yaw)};
+    const move_vector_para: [2]f32 = .{ -@sin(render.camera.yaw), @cos(render.camera.yaw) };
     // move_vector_para rotated 90 degrees
-    const move_vector_perp: [2]f32 = .{@cos(render.camera.yaw), @sin(render.camera.yaw)};
+    const move_vector_perp: [2]f32 = .{ @cos(render.camera.yaw), @sin(render.camera.yaw) };
 
     const forward_delta: f32 = @floatFromInt(@as(i8, @intFromBool(go_forward)) - @as(i8, @intFromBool(go_back)));
     const right_delta: f32 = @floatFromInt(@as(i8, @intFromBool(go_right)) - @as(i8, @intFromBool(go_left)));
@@ -71,9 +71,8 @@ pub fn updateCameraPosition(window: *zglfw.Window) void {
         if (added_mag == 0) return;
 
         // normalize
-        break :blk .{added_x / added_mag, added_z / added_mag};
+        break :blk .{ added_x / added_mag, added_z / added_mag };
     };
-
 
     std.debug.assert(@abs(final_move_vec_x * final_move_vec_x + final_move_vec_z * final_move_vec_z - 1) < 0.001);
 

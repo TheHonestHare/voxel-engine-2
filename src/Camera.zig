@@ -6,6 +6,7 @@ pub const Camera = @This();
 
 pos: [3]f32,
 pitch: f32,
+/// 0 yaw points in positive z I believe
 yaw: f32,
 roll: f32 = 0,
 fov: f32,

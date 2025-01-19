@@ -83,6 +83,7 @@ const test_square = array<vec4f, 4>(
 struct VertexOut {
     @builtin(position) pos: vec4f,
     @location(0) uv: vec2f,
+    @location(1) @interpolate(flat) material_index: u32,
 }
 
 @vertex fn main(@builtin(vertex_index) index: u32) -> VertexOut {
@@ -99,5 +100,7 @@ struct VertexOut {
     let pos = perspective_mat * camera_transform_mat * worldspace_position;
     let uv = vec2f(vec2u(index_rel & 2, index_rel & 1) != vec2u(0));
 
-    return VertexOut(pos, uv);
+    let material_index = extractBits(face_int, 16, 16) - 1;
+
+    return VertexOut(pos, uv, material_index);
 }

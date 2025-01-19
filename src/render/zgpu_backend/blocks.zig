@@ -16,11 +16,13 @@ pub const State = struct {
     index_buffer_h: zgpu.BufferHandle,
     face_data_buffer_h: zgpu.BufferHandle,
     chunk_data_buffer_h: zgpu.BufferHandle,
+    textures_buffer_h: zgpu.BufferHandle,
     bindgroup_h: zgpu.BindGroupHandle,
     world: *const World,
 };
 
 // TODO: ensure max_required_faces is multiple of minStorageBufferOffsetAlignment
+// TODO: if this function fails should auto-deinit everything
 pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGroups, world: *const World, comptime max_required_faces: u32) !State {
     var limits: zgpu.wgpu.SupportedLimits = .{};
     _ = gctx.device.getLimits(&limits); // TODO: why are we discarding here?
@@ -100,18 +102,44 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         chunk_data_buffer.unmap();
     }
 
+    const textures_buffer_h = gctx.createBuffer(.{
+        .label = "Material's pixel's buffer",
+        .mapped_at_creation = true,
+        .size = @sizeOf(World.ImageTexture) * world.textures.len,
+        .usage = .{
+            .storage = true,
+        },
+    });
+
+    {
+        const textures_buffer = gctx.lookupResource(textures_buffer_h) orelse return error.ResourceCreationFailure;
+        const mapped_buffer = textures_buffer.getMappedRange(World.ImageTexture, 0, world.textures.len).?;
+        @memcpy(mapped_buffer, world.textures);
+        textures_buffer.unmap();
+    }
+
     const bindgroup_layout_h = gctx.createBindGroupLayout(&.{
         zgpu.bufferEntry(0, .{ .vertex = true }, .read_only_storage, true, 0),
         zgpu.bufferEntry(1, .{ .vertex = true }, .read_only_storage, true, 0),
+        zgpu.bufferEntry(2, .{ .fragment = true }, .read_only_storage, false, 0),
     });
     defer gctx.releaseResource(bindgroup_layout_h);
 
     const bindgroup_h = gctx.createBindGroup(bindgroup_layout_h, &.{
-        .{ .binding = 0, .buffer_handle = face_data_buffer_h, .size = @sizeOf([max_required_faces]World.Chunk.Face) },
+        .{
+            .binding = 0,
+            .buffer_handle = face_data_buffer_h,
+            .size = @sizeOf([max_required_faces]World.Chunk.Face),
+        },
         .{
             .binding = 1,
             .buffer_handle = chunk_data_buffer_h,
             .size = chunk_data_single_inst_size,
+        },
+        .{
+            .binding = 2,
+            .buffer_handle = textures_buffer_h,
+            .size = @sizeOf(World.ImageTexture) * world.textures.len,
         },
     });
     const render_pipeline_h = blk: {
@@ -153,6 +181,7 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         .index_buffer_h = index_buffer_h,
         .face_data_buffer_h = face_data_buffer_h,
         .chunk_data_buffer_h = chunk_data_buffer_h,
+        .textures_buffer_h = textures_buffer_h,
         .bindgroup_h = bindgroup_h,
     };
 }

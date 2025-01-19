@@ -17,16 +17,19 @@ dims: [3]u16,
 sparse_chunk_grid: []u32,
 /// first element is always garbage and empty
 chunk_data: std.MultiArrayList(Chunk),
+textures: []const ImageTexture,
 
 /// chunk_populator should set the bitmask to 0 first
 /// chunk_populator should return null if the chunk is unempty
-pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chunk_populator: ChunkPopulatorFn) !@This() {
+pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chunk_populator: ChunkPopulatorFn, textures: []const ImageTexture) !@This() {
+    std.debug.assert(textures.len < std.math.maxInt(MaterialIndex));
     var self: @This() = .{
         .ally = ally,
         .chunk_arena = .init(ally),
         .dims = dims,
         .sparse_chunk_grid = undefined,
         .chunk_data = .{},
+        .textures = textures, // TODO: make copy or no?
     };
     errdefer self.chunk_arena.deinit();
     const chunk_ally = self.chunk_arena.allocator();
@@ -94,6 +97,15 @@ pub fn deinit(self: *@This()) void {
     self.chunk_arena.deinit();
     self.ally.free(self.sparse_chunk_grid);
 }
+
+pub const ImageTexture = [8][8]ColourUnorm;
+
+pub const ColourUnorm = packed struct(u32) {
+    r: u8,
+    g: u8,
+    b: u8,
+    _padding: u8 = undefined,
+};
 
 // // call with *const array_bitset
 // fn extractRange(array_bitset: anytype, start_index: usize, comptime len: comptime_int) std.meta.Int(.unsigned, len) {
@@ -282,7 +294,7 @@ pub const Chunk = struct {
         z: u4,
         face: Direction,
         __padding: u1 = undefined,
-        material: u16, // TODO: use palette compression per chunk, no need to use the full u16 index
+        material: MaterialIndex, // TODO: use palette compression per chunk, no need to use the full u16 index
     };
 
     pub fn material_index(x: SideInt, y: SideInt, z: SideInt) MaterialInt {

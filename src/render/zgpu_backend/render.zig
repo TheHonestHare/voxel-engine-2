@@ -24,6 +24,20 @@ pub fn init(window: *zglfw.Window, ally: std.mem.Allocator) void {
     init_inner(window, ally) catch |e| util.exitWithError(util.init_logger, "Error initiating render pipeline: {any}", .{e});
 }
 
+pub const test_texture: World.ImageTexture = blk: {
+    var tmp: World.ImageTexture = undefined;
+    for (0..8) |y| {
+        for (0..8) |x| {
+            if (y < 4) {
+                tmp[y][x] = if (x < 4) .{ .r = 200, .g = 200, .b = 0 } else .{ .r = 0, .g = 0, .b = 200 };
+            } else {
+                tmp[y][x] = if (x < 4) .{ .r = 0, .g = 0, .b = 200 } else .{ .r = 200, .g = 200, .b = 0 };
+            }
+        }
+    }
+    break :blk tmp;
+};
+
 fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     gctx = try zgpu.GraphicsContext.create(
         ally,
@@ -74,7 +88,7 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
             }
             block_materials[1 + 2 * size + 1 * size * size] = 1;
         }
-    }.populate);
+    }.populate, &.{test_texture});
     block_state = try blocks.init(gctx, layouts, &world, 1 << 10);
 
     createDepthTexture();

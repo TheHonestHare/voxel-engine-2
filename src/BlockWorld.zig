@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const TextureIndex = u16;
 pub const MaterialIndex = u16;
 pub const ChunkPopulatorFn = *const fn (
     *Chunk.BlockMaterials,
@@ -18,11 +19,12 @@ sparse_chunk_grid: []u32,
 /// first element is always garbage and empty
 chunk_data: std.MultiArrayList(Chunk),
 textures: []const ImageTexture,
+material_textures: []const [6]TextureIndex,
 
 /// chunk_populator should set the bitmask to 0 first
 /// chunk_populator should return null if the chunk is unempty
-pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chunk_populator: ChunkPopulatorFn, textures: []const ImageTexture) !@This() {
-    std.debug.assert(textures.len < std.math.maxInt(MaterialIndex));
+pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chunk_populator: ChunkPopulatorFn, textures: []const ImageTexture, material_textures: []const [6]TextureIndex) !@This() {
+    std.debug.assert(textures.len < std.math.maxInt(TextureIndex));
     var self: @This() = .{
         .ally = ally,
         .chunk_arena = .init(ally),
@@ -30,6 +32,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
         .sparse_chunk_grid = undefined,
         .chunk_data = .{},
         .textures = textures, // TODO: make copy or no?
+        .material_textures = material_textures, // TODO: make copy or no?
     };
     errdefer self.chunk_arena.deinit();
     const chunk_ally = self.chunk_arena.allocator();
@@ -81,7 +84,7 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
                 //     if(one_less_y_position != 0) canonicalize_y_bitmap(&bitmap_slice[one_less_y_position], &bitmap_slice[i]);
                 // }
                 self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = @intCast(i);
-                mesh_slice[i] = try Chunk.generateMesh(chunk_ally, &material_slice[i]);
+                mesh_slice[i] = try Chunk.generateMesh(chunk_ally, &material_slice[i], material_textures);
                 chunk_coords_slice[i] = .{ x, y, z };
 
                 i = self.chunk_data.addOneAssumeCapacity();
@@ -277,7 +280,7 @@ pub const Chunk = struct {
     comptime {
         // we heavily rely on this fact to be able to tightly pack the data. If this is changed, redo this code
         std.debug.assert(std.math.IntFittingRange(0, CHUNK_SIZE - 1) == u4);
-        std.debug.assert(MaterialIndex == u16);
+        std.debug.assert(TextureIndex == u16);
     }
     pub const Face = packed struct(u32) {
         /// laid out in such a way such that bottom bit corresponds to being low or high on the axis
@@ -294,7 +297,7 @@ pub const Chunk = struct {
         z: u4,
         face: Direction,
         __padding: u1 = undefined,
-        material: MaterialIndex, // TODO: use palette compression per chunk, no need to use the full u16 index
+        material: TextureIndex, // TODO: use palette compression per chunk, no need to use the full u16 index
     };
 
     pub fn material_index(x: SideInt, y: SideInt, z: SideInt) MaterialInt {
@@ -313,7 +316,7 @@ pub const Chunk = struct {
 
     // TODO: add culling, make 1000x faster
     /// returns the vertices and an index buffer
-    pub fn generateMesh(ally: std.mem.Allocator, materials: *const BlockMaterials) ![]Face {
+    pub fn generateMesh(ally: std.mem.Allocator, materials: *const BlockMaterials, material_textures: []const [6]TextureIndex) ![]Face {
         var face_data: std.ArrayListUnmanaged(Face) = .empty;
         errdefer face_data.deinit(ally);
         var y: u32 = 0;
@@ -337,7 +340,7 @@ pub const Chunk = struct {
                             .x = @intCast(x),
                             .y = @intCast(y),
                             .z = @intCast(z),
-                            .material = mat_index, // TODO: convert this into coordinates on the texture atlas
+                            .material = material_textures[mat_index - 1][@intFromEnum(dir)],
                             .face = dir,
                         });
                     }

@@ -88,7 +88,7 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
             }
             block_materials[1 + 2 * size + 1 * size * size] = 1;
         }
-    }.populate, &.{test_texture});
+    }.populate, &.{test_texture}, &.{@splat(0)});
     block_state = try blocks.init(gctx, layouts, &world, 1 << 10);
 
     createDepthTexture();

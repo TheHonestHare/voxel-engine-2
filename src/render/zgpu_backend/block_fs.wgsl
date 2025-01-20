@@ -2,16 +2,16 @@
 
 struct FragmentIn {
     @location(0) uv: vec2f,
-    @location(1) @interpolate(flat) material_index: u32,
+    @location(1) @interpolate(flat) texture_index: u32,
 }
 
 @fragment fn main(in: FragmentIn) -> @location(0) vec4f {
     let uv = in.uv;
-    let material_index = in.material_index;
+    let texture_index = in.texture_index;
 
     let uv_int = vec2u(uv * 8);
 
-    let colour_unorm = material_pixels[material_index * 8 * 8 + uv_int.y * 8 + uv_int.x];
+    let colour_unorm = material_pixels[texture_index * 8 * 8 + uv_int.y * 8 + uv_int.x];
     let colour = unpack4x8unorm(colour_unorm).rgb;
 
     return vec4f((colour), 1);

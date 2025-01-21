@@ -23,6 +23,7 @@ pub fn main() !void {
     defer window.destroy();
     //window.setInputMode(.raw_mouse_motion, true);
     _ = window.setKeyCallback(input.keyCallback);
+    window.setInputMode(.cursor, .disabled);
     var t2 = std.time.microTimestamp();
     util.init_logger.debug("zglfw setup took {d}us", .{t2 - t});
 

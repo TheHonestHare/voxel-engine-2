@@ -191,7 +191,7 @@ pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPas
     const index_buffer = gctx.lookupResource(state.index_buffer_h) orelse return error.FailedLookup;
     const bindgroup = gctx.lookupResource(state.bindgroup_h) orelse return error.FailedLookup;
 
-    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * state.constants.max_required_faces);
+    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * INDEX_PER_FACE * state.constants.max_required_faces); // TODO: check if size is per elem or per byte
     pass.setPipeline(pipeline);
 
     // TODO: draw multiple chunks

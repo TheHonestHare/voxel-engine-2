@@ -25,6 +25,7 @@ material_textures: []const [6]TextureIndex,
 /// chunk_populator should return null if the chunk is unempty
 pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chunk_populator: ChunkPopulatorFn, textures: []const ImageTexture, material_textures: []const [6]TextureIndex) !@This() {
     std.debug.assert(textures.len < std.math.maxInt(TextureIndex));
+    std.debug.assert(material_textures.len < std.math.maxInt(MaterialIndex));
     var self: @This() = .{
         .ally = ally,
         .chunk_arena = .init(ally),

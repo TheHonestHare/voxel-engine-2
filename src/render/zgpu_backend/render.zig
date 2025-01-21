@@ -24,20 +24,6 @@ pub fn init(window: *zglfw.Window, ally: std.mem.Allocator) void {
     init_inner(window, ally) catch |e| util.exitWithError(util.init_logger, "Error initiating render pipeline: {any}", .{e});
 }
 
-pub const test_texture: World.ImageTexture = blk: {
-    var tmp: World.ImageTexture = undefined;
-    for (0..8) |y| {
-        for (0..8) |x| {
-            if (y < 4) {
-                tmp[y][x] = if (x < 4) .{ .r = 200, .g = 200, .b = 0 } else .{ .r = 0, .g = 0, .b = 200 };
-            } else {
-                tmp[y][x] = if (x < 4) .{ .r = 0, .g = 0, .b = 200 } else .{ .r = 200, .g = 200, .b = 0 };
-            }
-        }
-    }
-    break :blk tmp;
-};
-
 fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     gctx = try zgpu.GraphicsContext.create(
         ally,
@@ -74,22 +60,8 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     const layouts = try BindGroups.init();
     defer layouts.releaseLayouts();
 
-    world = try World.init(ally, .{ 2, 2, 2 }, undefined, struct {
-        pub fn populate(block_materials: *World.Chunk.BlockMaterials, x: u32, y: u32, z: u32, userpointer: *anyopaque) ?void {
-            _ = x;
-            _ = y;
-            _ = z;
-            _ = userpointer;
-            block_materials.* = @splat(0);
-            block_materials[0] = 1;
-            const size = World.Chunk.CHUNK_SIZE;
-            inline for (.{ 7, 6, 5, 4, 3, 6, 6, 4, 4 }, .{ 2, 1, 1, 1, 2, 4, 5, 4, 5 }) |x_, y_| {
-                block_materials[x_ + y_ * size * size] = 1;
-            }
-            block_materials[1 + 2 * size + 1 * size * size] = 1;
-        }
-    }.populate, &.{test_texture}, &.{@splat(0)});
-    block_state = try blocks.init(gctx, layouts, &world, 1 << 10);
+    world = try @import("../../test_world.zig").init_world(ally);
+    block_state = try blocks.init(gctx, layouts, &world, 1 << 14); // TODO: set max_required_faces to its actual value
 
     createDepthTexture();
 }

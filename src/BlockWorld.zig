@@ -4,12 +4,13 @@ pub const TextureIndex = u16;
 pub const MaterialIndex = u16;
 pub const ChunkPopulatorFn = *const fn (
     *Chunk.BlockMaterials,
-    //*Chunk.BlockBitmap,
     x: u32,
     y: u32,
     z: u32,
     userpointer: *anyopaque,
 ) ?void;
+
+const BlockWorld = @This();
 
 ally: std.mem.Allocator,
 chunk_arena: std.heap.ArenaAllocator, // TODO: don't use an arena since we don't clear frequently
@@ -37,11 +38,11 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
     };
     errdefer self.chunk_arena.deinit();
     const chunk_ally = self.chunk_arena.allocator();
-    //
+
     self.sparse_chunk_grid = try ally.alloc(u32, dims[0] * dims[1] * dims[2]);
     errdefer ally.free(self.sparse_chunk_grid);
-    // TODO: u32 might be too small
-    var y: u32 = 0;
+
+    var y: u16 = 0;
     var i: usize = undefined;
     try self.chunk_data.append(chunk_ally, .{ .block_materials = undefined, .mesh = &.{}, .chunk_coords = undefined });
     // TODO: multithread this because yes
@@ -56,43 +57,56 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
         // I'm pretty sure this is safe because we ensureUnusedCapacity beforehand but this should be tested
         const material_slice = slice.items(.block_materials).ptr;
         const mesh_slice = slice.items(.mesh).ptr;
+        _ = mesh_slice; // autofix
         const chunk_coords_slice = slice.items(.chunk_coords).ptr;
-        //const bitmap_slice = slice.items(.block_bitmap).ptr;
-        //bitmap_slice[i] = .initEmpty();
-        var z: u32 = 0;
+        var z: u16 = 0;
         while (z < dims[2]) {
             defer z += 1;
 
-            var x: u32 = 0;
+            var x: u16 = 0;
             while (x < dims[0]) {
                 defer x += 1;
 
                 if (chunk_populator(&material_slice[i], x, y, z, userpointer) == null) {
-                    self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = 0;
+                    self.sparse_chunk_grid[self.index_into_sparse(.{ x, y, z })] = 0;
                     continue;
                 }
-                // if(x != 0) {
-                //     const prev_bitmap_position = self.sparse_chunk_grid[(x-1) + z * dims[2] + y * dims[1] * dims[1]];
-                //     std.debug.assert(i - prev_bitmap_position == 1 or prev_bitmap_position == 0); // this assertion should be removed if this is turned into a general purpose function
-                //     if(prev_bitmap_position != 0) canonicalize_x_bitmap(&bitmap_slice[prev_bitmap_position], &bitmap_slice[i]);
-                // }
-                // if(z != 0) {
-                //     const one_less_z_position = self.sparse_chunk_grid[x + (z-1) * dims[2] + y * dims[1] * dims[1]];
-                //     if(one_less_z_position != 0) canonicalize_z_bitmap(&bitmap_slice[one_less_z_position], &bitmap_slice[i]);
-                // }
-                // if(y != 0) {
-                //     const one_less_y_position = self.sparse_chunk_grid[x + z * dims[2] + (y - 1) * dims[1] * dims[1]];
-                //     if(one_less_y_position != 0) canonicalize_y_bitmap(&bitmap_slice[one_less_y_position], &bitmap_slice[i]);
-                // }
-                self.sparse_chunk_grid[x + z * dims[2] + y * dims[1]] = @intCast(i);
-                mesh_slice[i] = try Chunk.generateMesh(chunk_ally, &material_slice[i], material_textures);
+                self.sparse_chunk_grid[self.index_into_sparse(.{ x, y, z })] = @intCast(i);
+                // mesh will be computed later
                 chunk_coords_slice[i] = .{ x, y, z };
 
                 i = self.chunk_data.addOneAssumeCapacity();
-                //bitmap_slice[i] = .initEmpty();
             }
         }
         self.chunk_data.len -= 1;
+    }
+
+    // mesh generation
+    // TODO: use a memory pool
+    // TODO: move to different thread
+    const slice = self.chunk_data.slice();
+    const mesh_slice = slice.items(.mesh).ptr;
+    y = 0;
+    while (y < dims[1]) {
+        defer y += 1;
+        var z: u16 = 0;
+        while (z < dims[2]) {
+            defer z += 1;
+            var x: u16 = 0;
+            while (x < dims[0]) {
+                defer x += 1;
+                const dense_index = self.index_into_dense(.{ x, y, z });
+                if (dense_index == 0) continue;
+
+                const chunk_memory = try chunk_ally.alloc(Chunk.Face, Chunk.MAX_REQUIRED_FACES);
+                const generated_faces_count = Chunk.generateCulledMesh(@ptrCast(chunk_memory), self, .{ x, y, z });
+                if (generated_faces_count == 0) {
+                    chunk_ally.free(chunk_memory);
+                    continue;
+                }
+                mesh_slice[dense_index] = chunk_memory[0..generated_faces_count];
+            }
+        }
     }
     return self;
 }
@@ -100,6 +114,16 @@ pub fn init(ally: std.mem.Allocator, dims: [3]u16, userpointer: *anyopaque, chun
 pub fn deinit(self: *@This()) void {
     self.chunk_arena.deinit();
     self.ally.free(self.sparse_chunk_grid);
+}
+
+/// get the index into the sparse array from coordinates
+pub fn index_into_sparse(self: *const @This(), coords: [3]u16) usize {
+    return coords[1] * self.dims[1] * self.dims[1] + coords[2] * self.dims[2] + coords[0];
+}
+
+/// get the index into the dense array from coordinates
+pub fn index_into_dense(self: *const @This(), coords: [3]u16) u32 {
+    return self.sparse_chunk_grid[self.index_into_sparse(coords)];
 }
 
 pub const ImageTexture = [8][8]ColourUnorm;
@@ -111,172 +135,14 @@ pub const ColourUnorm = packed struct(u32) {
     _padding: u8 = undefined,
 };
 
-// // call with *const array_bitset
-// fn extractRange(array_bitset: anytype, start_index: usize, comptime len: comptime_int) std.meta.Int(.unsigned, len) {
-//     if(start_index + len >= array_bitset.capacity()) unreachable; // attempting would go out of bounds
-
-//     const mask_len = @bitSizeOf(@TypeOf(array_bitset.*).MaskInt);
-//     var tmp: std.meta.Int(.unsigned, len) = 0;
-//     var i: usize = 0;
-//     const init_can_take = mask_len - (start_index % mask_len);
-//     tmp = maybe_truncate(std.meta.Int(.unsigned, len), array_bitset.masks[start_index / mask_len] >> @intCast(start_index % mask_len));
-//     i += init_can_take;
-//     while(i < len) {
-//         defer i += mask_len;
-//         tmp |= @truncate(@as(std.meta.Int(.unsigned, (len / mask_len + 1) * mask_len), array_bitset.masks[(start_index + i) / mask_len]) << @intCast(i));
-//     }
-//     return tmp;
-// }
-// // call with *const array_bitset
-// fn insertRange(array_bitset: anytype, start_index: usize, comptime len: comptime_int, value: std.meta.Int(.unsigned, len)) void {
-//     if(start_index + len >= array_bitset.capacity()) unreachable; // attempting would go out of bounds
-//     const MaskInt = @TypeOf(array_bitset.*).MaskInt;
-//     const mask_len = @bitSizeOf(MaskInt);
-//     var i: usize = 0;
-//     const start_offset: std.math.Log2Int(MaskInt) = @intCast(start_index % mask_len);
-//     // take is the distance to the end of the chunk
-//     const take: usize = @as(usize, @min(mask_len - 1 - start_offset , len - 1)) + 1;
-//     array_bitset.masks[start_index / mask_len] &= ~(set_first_n(MaskInt, take) << start_offset);
-//     array_bitset.masks[start_index / mask_len] |= maybe_truncate(MaskInt, value) << start_offset;
-//     i += take;
-//     while(mask_len + i <= len) {
-//         defer i += mask_len;
-//         array_bitset.masks[(start_index + i) / mask_len] = maybe_truncate(MaskInt, value >> @intCast(i));
-//     }
-//     array_bitset.masks[(start_index + i) / mask_len] &= ~set_first_n(MaskInt, len - i);
-//     array_bitset.masks[(start_index + i) / mask_len] |= @intCast(@as(std.meta.Int(.unsigned, (len / mask_len + 1) * mask_len), value) >> @intCast(i));
-// }
-
-// fn set_first_n(comptime T: type, n: usize) T {
-//     if(n >= @bitSizeOf(T)) return ~@as(T, 0);
-//     return (@as(T, 1) << @intCast(n)) - 1;
-// }
-
-// fn maybe_truncate(comptime DestT: type, val: anytype) DestT {
-//     if(@bitSizeOf(@TypeOf(val)) < @bitSizeOf(DestT)) return val;
-//     return @truncate(val);
-// }
-
-// // TODO: test this rigourously because my code is "optimized" dogcrap
-// // TODO: don't rely on codegen of big ints because apparently zig is bad at those
-// test {
-//     var test_bitset: std.bit_set.ArrayBitSet(usize, 400) = .initFull();
-//     test_bitset.setRangeValue(.{.start = 100, .end = 110}, false);
-//     test_bitset.setRangeValue(.{.start = 63, .end = 66}, false);
-//     test_bitset.setRangeValue(.{.start = 150, .end = 350}, false);
-//     try std.testing.expectEqual(0b11111_00000_00000_11111, extractRange(&test_bitset, 95, 20));
-//     try std.testing.expectEqual(0b11111_00011, extractRange(&test_bitset, 61, 10));
-//     try std.testing.expectEqual(0b01111_11111 + (0b1 << (350-141)), extractRange(&test_bitset, 141, (350-141+1)));
-
-//     test_bitset = .initFull();
-//     insertRange(&test_bitset, 100, 100, 0b001100);
-//     try std.testing.expectEqual(0b00001100 + (1 << 100), extractRange(&test_bitset, 100, 101));
-//     test_bitset = .initFull();
-//     insertRange(&test_bitset, 0, 64, 0x7F00_FF00_FF00_00FF);
-//     try std.testing.expectEqual(0x1_7F00_FF00_FF00_00FF, extractRange(&test_bitset, 0, 65));
-// }
-// /// left should be the lower x value
-// pub fn canonicalize_x_bitmap(left: *Chunk.BlockBitmap, right: *Chunk.BlockBitmap) void {
-//     var y: usize = 1;
-//     while(y < Chunk.CHUNK_SIZE_WITH_ADJ - 1) {
-//         defer y += 1;
-
-//         var z: usize = 1;
-//         while(z < Chunk.CHUNK_SIZE_WITH_ADJ - 1) {
-//             defer z += 1;
-
-//             const offset = z * Chunk.CHUNK_SIZE_WITH_ADJ + y * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-
-//             const x_from_left = Chunk.CHUNK_SIZE_WITH_ADJ - 2;
-//             const x_to_left = x_from_left + 1;
-//             const x_from_right = 1;
-//             const x_to_right = x_from_right - 1;
-//             right.setValue(x_to_right + offset, left.isSet(x_from_left + offset));
-//             left.setValue(x_to_left + offset, right.isSet(x_from_right + offset));
-//         }
-//     }
-// }
-
-// /// left should be the lower z value
-// pub fn canonicalize_z_bitmap(left: *Chunk.BlockBitmap, right: *Chunk.BlockBitmap) void {
-
-//     var y: usize = 1;
-//     while(y < Chunk.CHUNK_SIZE_WITH_ADJ - 1) {
-//         defer y += 1;
-
-//         const z_from_left = Chunk.CHUNK_SIZE_WITH_ADJ - 2;
-//         const z_to_left = z_from_left + 1;
-//         const z_from_right = 1;
-//         const z_to_right = z_from_right - 1;
-
-//         const right_offset = 1 + y * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-//         const left_offset = 1 + y * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-//         insertRange(right, z_to_right * Chunk.CHUNK_SIZE_WITH_ADJ + right_offset, Chunk.CHUNK_SIZE, extractRange(left, z_from_left * Chunk.CHUNK_SIZE_WITH_ADJ + left_offset, Chunk.CHUNK_SIZE));
-//         insertRange(left, z_to_left * Chunk.CHUNK_SIZE_WITH_ADJ + left_offset, Chunk.CHUNK_SIZE, extractRange(right, z_from_right * Chunk.CHUNK_SIZE_WITH_ADJ + right_offset, Chunk.CHUNK_SIZE));
-//     }
-// }
-
-// pub fn canonicalize_y_bitmap(bot: *Chunk.BlockBitmap, top: *Chunk.BlockBitmap) void {
-//     const y_from_bot = Chunk.CHUNK_SIZE_WITH_ADJ - 2;
-//     const y_to_bot = y_from_bot + 1;
-//     const y_from_top = 1;
-//     const y_to_top = y_from_top - 1;
-//     const CHUNK_ADJ_SQUARED = Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-//     insertRange(top, y_to_top * CHUNK_ADJ_SQUARED, CHUNK_ADJ_SQUARED, extractRange(bot, y_from_bot * CHUNK_ADJ_SQUARED, CHUNK_ADJ_SQUARED));
-//     insertRange(bot, y_to_bot * CHUNK_ADJ_SQUARED, CHUNK_ADJ_SQUARED, extractRange(top, y_from_top * CHUNK_ADJ_SQUARED, CHUNK_ADJ_SQUARED));
-// }
-
-// // this test sets various points along the z shared by 2 bitmaps, canonicalizes the edges, and then tests if the points were copied correctly
-// test canonicalize_z_bitmap {
-//     var left: Chunk.BlockBitmap = .initEmpty();
-//     var right: Chunk.BlockBitmap = .initEmpty();
-//     const left_coords = .{
-//         .{0, 0},
-//         .{0, Chunk.CHUNK_SIZE - 1},
-//         .{Chunk.CHUNK_SIZE - 1, 0},
-//         .{Chunk.CHUNK_SIZE - 1, Chunk.CHUNK_SIZE - 1},
-//         .{3, 3},
-//     };
-//     const right_coords = .{
-//         .{0, Chunk.CHUNK_SIZE / 2},
-//         .{Chunk.CHUNK_SIZE / 2, 0},
-//         .{Chunk.CHUNK_SIZE - 1, Chunk.CHUNK_SIZE / 2},
-//         .{Chunk.CHUNK_SIZE / 2, Chunk.CHUNK_SIZE - 1},
-//         .{5, 5}
-//     };
-//     inline for(left_coords, right_coords) |left_coord, right_coord| {
-//         left.set((left_coord[0] + 1) + (Chunk.CHUNK_SIZE_WITH_ADJ - 2) * Chunk.CHUNK_SIZE_WITH_ADJ + (left_coord[1] + 1) * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ);
-//         right.set((right_coord[0] + 1) + 1 * Chunk.CHUNK_SIZE_WITH_ADJ + (right_coord[1] + 1) * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ);
-//     }
-//     canonicalize_z_bitmap(&left, &right);
-
-//     inline for(left_coords, right_coords) |left_coord, right_coord| {
-//         // check right for lefts
-//         {
-//             const index = (left_coord[0] + 1) + 0 * Chunk.CHUNK_SIZE_WITH_ADJ + (left_coord[1] + 1) * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-//             try std.testing.expect(right.isSet(index));
-//             right.unset(index);
-//         }
-//         // check left for rights
-//         {
-//             const index = (right_coord[0] + 1) + (Chunk.CHUNK_SIZE_WITH_ADJ - 1) * Chunk.CHUNK_SIZE_WITH_ADJ + (right_coord[1] + 1) * Chunk.CHUNK_SIZE_WITH_ADJ * Chunk.CHUNK_SIZE_WITH_ADJ;
-//             try std.testing.expect(left.isSet(index));
-//             left.unset(index);
-//         }
-//     }
-//     try std.testing.expectEqual(5, left.count());
-//     try std.testing.expectEqual(5, right.count());
-// }
-
-/// Blocks are organized in x, z, y order
-/// The real stored size is 1 block bigger on all edges to keep track of adjacent chunks edge blocks
 pub const Chunk = struct {
-    pub const CHUNK_SIZE: comptime_int = 16;
-    pub const CHUNK_SIZE_WITH_ADJ: comptime_int = CHUNK_SIZE + 2;
+    pub const CHUNK_SIZE = 16;
+    pub const CHUNK_SIZE_EDGES = CHUNK_SIZE + 2;
+    // obtained from a chunk with every alternating block removed
+    pub const MAX_REQUIRED_FACES = (CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE / 2) * 6;
     const SideInt = std.math.IntFittingRange(0, CHUNK_SIZE - 1);
-    const SideAndAdjInt = std.math.IntFittingRange(0, CHUNK_SIZE_WITH_ADJ - 1);
+    const SideAndAdjInt = std.math.IntFittingRange(0, CHUNK_SIZE_EDGES - 1);
     const MaterialInt = std.math.IntFittingRange(0, CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE - 1); // TODO: rename
-    const BitmapInt = std.math.IntFittingRange(0, CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ - 1);
 
     comptime {
         // we heavily rely on this fact to be able to tightly pack the data. If this is changed, redo this code
@@ -307,47 +173,190 @@ pub const Chunk = struct {
     }
 
     pub const BlockMaterials = [CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE]MaterialIndex;
-    const BlockBitmap = std.bit_set.ArrayBitSet(usize, CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ * CHUNK_SIZE_WITH_ADJ); // TODO: use an array of usize, add padding so each y row starts at byte offset
 
     block_materials: BlockMaterials,
-    //block_bitmap: BlockBitmap,
     /// allocated with world allocator
     mesh: []Face,
     chunk_coords: [3]u32,
 
-    // TODO: add culling, make 1000x faster
-    /// returns the vertices and an index buffer
-    pub fn generateMesh(ally: std.mem.Allocator, materials: *const BlockMaterials, material_textures: []const [6]TextureIndex) ![]Face {
-        var face_data: std.ArrayListUnmanaged(Face) = .empty;
-        errdefer face_data.deinit(ally);
-        var y: u32 = 0;
-        while (y < CHUNK_SIZE) {
-            defer y += 1;
+    pub fn generateCulledMesh(result: *[MAX_REQUIRED_FACES]Face, world: BlockWorld, coordinates: [3]u16) usize {
 
-            var z: u32 = 0;
-            while (z < CHUNK_SIZE) {
-                defer z += 1;
+        // ensure that the bitsets are big enough
+        comptime std.debug.assert(CHUNK_SIZE_EDGES < @bitSizeOf(u32));
 
-                var x: u32 = 0;
-                while (x < CHUNK_SIZE) {
-                    defer x += 1;
+        const material_slice = world.chunk_data.items(.block_materials);
 
-                    // check if air
-                    const mat_index = materials[x + z * CHUNK_SIZE + y * CHUNK_SIZE * CHUNK_SIZE];
-                    if (mat_index == 0) continue;
+        const current_chunk_index = world.index_into_dense(coordinates);
+        if (current_chunk_index == 0) return 0;
+        const current_chunk = material_slice[current_chunk_index];
 
-                    for (std.enums.values(Face.Direction)) |dir| {
-                        try face_data.append(ally, .{
-                            .x = @intCast(x),
+        const prev_x_chunk_index = if (coordinates[0] == 0) 0 else world.index_into_dense(.{ coordinates[0] - 1, coordinates[1], coordinates[2] });
+        const prev_x_chunk = if (prev_x_chunk_index == 0) undefined else material_slice[prev_x_chunk_index];
+
+        const prev_y_chunk_index = if (coordinates[1] == 0) 0 else world.index_into_dense(.{ coordinates[0], coordinates[1] - 1, coordinates[2] });
+        const prev_y_chunk = if (prev_y_chunk_index == 0) undefined else material_slice[prev_y_chunk_index];
+
+        const prev_z_chunk_index = if (coordinates[2] == 0) 0 else world.index_into_dense(.{ coordinates[0], coordinates[1], coordinates[2] - 1 });
+        const prev_z_chunk = if (prev_z_chunk_index == 0) undefined else material_slice[prev_z_chunk_index];
+
+        const next_x_chunk_index = if (coordinates[0] + 1 >= world.dims[0]) 0 else world.index_into_dense(.{ coordinates[0] + 1, coordinates[1], coordinates[2] });
+        const next_x_chunk = if (next_x_chunk_index == 0) undefined else material_slice[next_x_chunk_index];
+
+        const next_y_chunk_index = if (coordinates[1] + 1 >= world.dims[1]) 0 else world.index_into_dense(.{ coordinates[0], coordinates[1] + 1, coordinates[2] });
+        const next_y_chunk = if (next_y_chunk_index == 0) undefined else material_slice[next_y_chunk_index];
+
+        const next_z_chunk_index = if (coordinates[2] + 1 >= world.dims[2]) 0 else world.index_into_dense(.{ coordinates[0], coordinates[1], coordinates[2] + 1 });
+        const next_z_chunk = if (next_z_chunk_index == 0) undefined else material_slice[next_z_chunk_index];
+
+        // initialize the bitmaps
+        // FIXME: for some reason this code isn't getting the last block of each list
+        var bitmaps: [CHUNK_SIZE_EDGES][CHUNK_SIZE_EDGES]u32 = @splat(@splat(0));
+        for (0..CHUNK_SIZE) |chunk_y| {
+            const bitmap_y = chunk_y + 1;
+            for (0..CHUNK_SIZE) |chunk_z| {
+                const bitmap_z = chunk_z + 1;
+                bitmaps[bitmap_y][bitmap_z] = extract_x_row(current_chunk[chunk_y * CHUNK_SIZE * CHUNK_SIZE + chunk_z * CHUNK_SIZE ..][0..CHUNK_SIZE].*);
+            }
+        }
+
+        // fill in padding along y direction
+        if (prev_y_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |z| {
+                bitmaps[0][z + 1] = extract_x_row(prev_y_chunk[(CHUNK_SIZE - 1) * CHUNK_SIZE * CHUNK_SIZE + z * CHUNK_SIZE ..][0..CHUNK_SIZE].*);
+            }
+        }
+        if (next_y_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |z| {
+                bitmaps[CHUNK_SIZE_EDGES - 1][z + 1] = extract_x_row(next_y_chunk[0 * CHUNK_SIZE * CHUNK_SIZE + z * CHUNK_SIZE ..][0..CHUNK_SIZE].*);
+            }
+        }
+
+        // fill in padding along z direction
+        if (prev_z_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |y| {
+                bitmaps[y + 1][0] = extract_x_row(prev_z_chunk[y * CHUNK_SIZE * CHUNK_SIZE + (CHUNK_SIZE - 1) * CHUNK_SIZE ..][0..CHUNK_SIZE].*);
+            }
+        }
+        if (next_z_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |y| {
+                bitmaps[y + 1][CHUNK_SIZE_EDGES - 1] = extract_x_row(next_z_chunk[y * CHUNK_SIZE * CHUNK_SIZE + 0 * CHUNK_SIZE ..][0..CHUNK_SIZE].*);
+            }
+        }
+
+        // fill in the padding along x direction
+        if (prev_x_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |y| {
+                for (0..CHUNK_SIZE) |z| {
+                    bitmaps[y + 1][z + 1] |= @intFromBool(prev_x_chunk[y * CHUNK_SIZE * CHUNK_SIZE + z * CHUNK_SIZE + (CHUNK_SIZE - 1)] > 0);
+                }
+            }
+        }
+        if (next_x_chunk_index != 0) {
+            for (0..CHUNK_SIZE) |y| {
+                for (0..CHUNK_SIZE) |z| {
+                    bitmaps[y + 1][z + 1] |= @as(u32, @intFromBool(next_x_chunk[y * CHUNK_SIZE * CHUNK_SIZE + z * CHUNK_SIZE + (0)] > 0)) << (CHUNK_SIZE_EDGES - 1);
+                }
+            }
+        }
+        // Now we must take the bitmaps and generate faces wherever we need to. For the x direction, bitshifting 1 left and xor-ing with
+        // the original allows us to find all the locations in which the original bitmap changed from 0 to 1 or vice versa. These locations
+        // are where we must generate a face.
+        // By and-ing switch_locations with the original, we get all the places in which the original changed from 1 to 0 and an
+        // west face should be generated. Then, we can take the remaining 1's from the switch_locations bitmap, and these are where
+        // it changed from a 0 to a 1. By bitshifting this one right, we can find the locations we must generate an east face.
+        // Finally, we bitshift right by 1 and truncate to get rid of the padding
+
+        comptime std.debug.assert(CHUNK_SIZE == @bitSizeOf(u16));
+        // mesh all x direction faces
+        var east_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+        var west_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+
+        for (0..CHUNK_SIZE) |y| {
+            for (0..CHUNK_SIZE) |z| {
+                const x_row = bitmaps[y + 1][z + 1];
+                const switch_locations = x_row ^ (x_row << 1);
+                const west_faces_in_row = x_row & switch_locations;
+                const east_faces_in_row = ((~west_faces_in_row) & switch_locations) >> 1;
+                east_faces[y][z], west_faces[y][z] = .{ @truncate(east_faces_in_row >> 1), @truncate(west_faces_in_row >> 1) };
+            }
+        }
+
+        // y direction and z direction use a similar algorithm, but switch_locations can instead be found by
+        // xor-ing two rows together. We also have to special case the padding rows at the ends of the y and z
+        // directions
+
+        // z direction
+        var north_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+        var south_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+        for (0..CHUNK_SIZE) |y| {
+            var x_row = bitmaps[y + 1][0];
+            for (0..CHUNK_SIZE_EDGES - 1) |real_z| {
+                const next_x_row = bitmaps[y + 1][real_z + 1];
+                const switch_locations = x_row ^ next_x_row;
+
+                if (real_z != 0) {
+                    const north_faces_in_row = x_row & switch_locations;
+                    north_faces[y][real_z - 1] = @truncate(north_faces_in_row >> 1);
+                }
+                if (real_z != CHUNK_SIZE_EDGES - 2) {
+                    const south_faces_in_row = (~x_row) & switch_locations;
+                    south_faces[y][real_z] = @truncate(south_faces_in_row >> 1);
+                }
+                x_row = next_x_row;
+            }
+        }
+
+        // y direction
+        var top_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+        var bottom_faces: [CHUNK_SIZE][CHUNK_SIZE]u16 = undefined;
+        for (0..CHUNK_SIZE_EDGES - 1) |real_y| {
+            for (0..CHUNK_SIZE) |z| {
+                const x_row = bitmaps[real_y][z + 1];
+                const next_x_row = bitmaps[real_y + 1][z + 1];
+                const switch_locations = x_row ^ next_x_row;
+
+                if (real_y != 0) {
+                    const top_faces_in_row = x_row & switch_locations;
+                    top_faces[real_y - 1][z] = @truncate(top_faces_in_row >> 1);
+                }
+                if (real_y != CHUNK_SIZE_EDGES - 2) {
+                    const bottom_faces_in_row = (~x_row) & switch_locations;
+                    bottom_faces[real_y][z] = @truncate(bottom_faces_in_row >> 1);
+                }
+            }
+        }
+
+        var face_count: usize = 0;
+
+        for (&[6][CHUNK_SIZE][CHUNK_SIZE]u16{ west_faces, east_faces, south_faces, north_faces, bottom_faces, top_faces }, std.enums.values(Face.Direction)) |face_bitmap, dir| {
+            for (0..CHUNK_SIZE) |y| {
+                for (0..CHUNK_SIZE) |z| {
+                    var x_row = face_bitmap[y][z];
+                    var index = @ctz(x_row);
+                    while (index != 16) {
+                        x_row &= ~(@as(u16, 1) << @intCast(index));
+                        const mat_index = current_chunk[index + z * CHUNK_SIZE + y * CHUNK_SIZE * CHUNK_SIZE];
+                        std.debug.assert(mat_index != 0);
+                        result[face_count] = .{
+                            .x = @intCast(index),
                             .y = @intCast(y),
                             .z = @intCast(z),
-                            .material = material_textures[mat_index - 1][@intFromEnum(dir)],
+                            .material = world.material_textures[mat_index - 1][@intFromEnum(dir)],
                             .face = dir,
-                        });
+                        };
+                        face_count += 1;
+                        index = @ctz(x_row);
                     }
                 }
             }
         }
-        return face_data.toOwnedSlice(ally);
+        return face_count;
+    }
+    fn extract_x_row(array: [CHUNK_SIZE]MaterialIndex) u32 {
+        // TODO: dynamically get the suggested vector length
+        comptime std.debug.assert(CHUNK_SIZE == @bitSizeOf(u16));
+        const RowMaterialVec = @Vector(CHUNK_SIZE, u16);
+        const non_empty_vec = array > @as(RowMaterialVec, @splat(0));
+        return @as(u32, @as(u16, @bitCast(non_empty_vec))) << 1;
     }
 };

@@ -9,7 +9,6 @@ const SPARE_CHUNKS = 10;
 
 pub const State = struct {
     constants: struct {
-        max_required_faces: u32,
         chunk_data_single_inst_size: usize,
     },
     pipeline: zgpu.RenderPipelineHandle,
@@ -23,21 +22,21 @@ pub const State = struct {
 
 // TODO: ensure max_required_faces is multiple of minStorageBufferOffsetAlignment
 // TODO: if this function fails should auto-deinit everything
-pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGroups, world: *const World, comptime max_required_faces: u32) !State {
+pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGroups, world: *const World) !State {
     var limits: zgpu.wgpu.SupportedLimits = .{};
     _ = gctx.device.getLimits(&limits); // TODO: why are we discarding here?
     const min_align_storage = limits.limits.min_storage_buffer_offset_alignment;
-    const min_faces_buffer_size = util.roundUp(@as(usize, @sizeOf([max_required_faces]World.Chunk.Face)), min_align_storage);
+    const min_faces_buffer_size = util.roundUp(@as(usize, @sizeOf([World.Chunk.MAX_REQUIRED_FACES]World.Chunk.Face)), min_align_storage);
     const index_buffer_h = gctx.createBuffer(.{
         .label = "Block index buffer",
         .mapped_at_creation = true,
-        .size = @sizeOf(u16) * INDEX_PER_FACE * max_required_faces,
+        .size = @sizeOf(u16) * INDEX_PER_FACE * World.Chunk.MAX_REQUIRED_FACES,
         .usage = .{ .index = true },
     });
     // populate an index buffer with indices that will draw quads
     {
         const index_buffer = gctx.lookupResource(index_buffer_h) orelse return error.ResourceCreationFailure;
-        const mapped_index_buffer = index_buffer.getMappedRange([INDEX_PER_FACE]u16, 0, max_required_faces).?;
+        const mapped_index_buffer = index_buffer.getMappedRange([INDEX_PER_FACE]u16, 0, World.Chunk.MAX_REQUIRED_FACES).?;
         for (mapped_index_buffer, 0..) |*indices, i_usize| {
             const i: u16 = @intCast(i_usize);
             indices.* = .{
@@ -66,12 +65,12 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
     // populate the face data buffer with all data
     {
         const face_data_buffer = gctx.lookupResource(face_data_buffer_h) orelse return error.ResourceCreationFailure;
-        const max_faces_and_padding = util.roundUp(max_required_faces, min_align_storage / @sizeOf(World.Chunk.Face));
+        const max_faces_and_padding = util.roundUp(World.Chunk.MAX_REQUIRED_FACES, min_align_storage / @sizeOf(World.Chunk.Face));
         const mapped_face_buffer = face_data_buffer.getMappedRange(World.Chunk.Face, 0, min_faces_buffer_size * chunk_count / @sizeOf(World.Chunk.Face)).?;
 
         for (world.chunk_data.items(.mesh)[1..], 0..) |mesh, i| {
-            std.debug.assert(mesh.len <= max_required_faces);
-            @memcpy(mapped_face_buffer[i * max_faces_and_padding .. i * max_faces_and_padding + max_required_faces].ptr, mesh);
+            std.debug.assert(mesh.len <= World.Chunk.MAX_REQUIRED_FACES);
+            @memcpy(mapped_face_buffer[i * max_faces_and_padding .. i * max_faces_and_padding + World.Chunk.MAX_REQUIRED_FACES].ptr, mesh);
         }
         face_data_buffer.unmap();
     }
@@ -129,7 +128,7 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         .{
             .binding = 0,
             .buffer_handle = face_data_buffer_h,
-            .size = @sizeOf([max_required_faces]World.Chunk.Face),
+            .size = @sizeOf([World.Chunk.MAX_REQUIRED_FACES]World.Chunk.Face),
         },
         .{
             .binding = 1,
@@ -146,7 +145,7 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
         const pipeline_layout_h = gctx.createPipelineLayout(&.{ base_bindgroup_layouts.layouts[0], base_bindgroup_layouts.layouts[1], bindgroup_layout_h });
         defer gctx.releaseResource(pipeline_layout_h);
 
-        const vs = zgpu.createWgslShaderModule(gctx.device, std.fmt.comptimePrint("const max_face_count = {d};", .{max_required_faces}) ++ @embedFile("block_vs.wgsl"), "vertex shader");
+        const vs = zgpu.createWgslShaderModule(gctx.device, std.fmt.comptimePrint("const max_face_count = {d};", .{World.Chunk.MAX_REQUIRED_FACES}) ++ @embedFile("block_vs.wgsl"), "vertex shader");
         defer vs.release();
         const fs = zgpu.createWgslShaderModule(gctx.device, @embedFile("block_fs.wgsl"), "fragment shader");
         defer fs.release();
@@ -173,7 +172,6 @@ pub fn init(gctx: *zgpu.GraphicsContext, base_bindgroup_layouts: render.BindGrou
     };
     return .{
         .constants = .{
-            .max_required_faces = max_required_faces,
             .chunk_data_single_inst_size = chunk_data_single_inst_size,
         },
         .world = world,
@@ -191,7 +189,7 @@ pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPas
     const index_buffer = gctx.lookupResource(state.index_buffer_h) orelse return error.FailedLookup;
     const bindgroup = gctx.lookupResource(state.bindgroup_h) orelse return error.FailedLookup;
 
-    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * INDEX_PER_FACE * state.constants.max_required_faces); // TODO: check if size is per elem or per byte
+    pass.setIndexBuffer(index_buffer, .uint16, 0, @sizeOf(u16) * INDEX_PER_FACE * World.Chunk.MAX_REQUIRED_FACES); // TODO: check if size is per elem or per byte
     pass.setPipeline(pipeline);
 
     // TODO: draw multiple chunks
@@ -199,7 +197,7 @@ pub fn draw(state: State, gctx: *zgpu.GraphicsContext, pass: zgpu.wgpu.RenderPas
     const mesh_slice = state.world.chunk_data.items(.mesh)[1..];
 
     for (0..state.world.chunk_data.len - 1) |i| {
-        const face_dyn_offset = i * @sizeOf(World.Chunk.Face) * state.constants.max_required_faces;
+        const face_dyn_offset = i * @sizeOf(World.Chunk.Face) * World.Chunk.MAX_REQUIRED_FACES;
         const chunk_data_dyn_offset = i * state.constants.chunk_data_single_inst_size;
 
         pass.setBindGroup(2, bindgroup, &.{ @intCast(face_dyn_offset), @intCast(chunk_data_dyn_offset) });

@@ -61,7 +61,7 @@ fn init_inner(window: *zglfw.Window, ally: std.mem.Allocator) !void {
     defer layouts.releaseLayouts();
 
     world = try @import("../../test_world.zig").init_world(ally);
-    block_state = try blocks.init(gctx, layouts, &world, 1 << 14); // TODO: set max_required_faces to its actual value
+    block_state = try blocks.init(gctx, layouts, &world);
 
     createDepthTexture();
 }
@@ -128,6 +128,8 @@ pub fn deinit(ally: std.mem.Allocator) void {
     gctx.destroy(ally);
 }
 
+// TODO: use multidrawindirect, separate faces into separate buffers and conditionally render them if its even possible
+// for them to be seen from the camera angle (saves having to run the vertex shader just to not render them)
 pub fn draw() void {
     const back_buffer_view = gctx.swapchain.getCurrentTextureView();
     defer back_buffer_view.release();

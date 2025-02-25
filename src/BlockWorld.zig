@@ -209,7 +209,6 @@ pub const Chunk = struct {
         const next_z_chunk = if (next_z_chunk_index == 0) undefined else material_slice[next_z_chunk_index];
 
         // initialize the bitmaps
-        // FIXME: for some reason this code isn't getting the last block of each list
         var bitmaps: [CHUNK_SIZE_EDGES][CHUNK_SIZE_EDGES]u32 = @splat(@splat(0));
         for (0..CHUNK_SIZE) |chunk_y| {
             const bitmap_y = chunk_y + 1;

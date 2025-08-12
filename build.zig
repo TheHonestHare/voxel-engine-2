@@ -11,11 +11,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    @import("zgpu").addLibraryPathsTo(exe);
-    const zgpu = b.dependency("zgpu", .{ .target = target, .optimize = optimize });
-    exe.root_module.addImport("zgpu", zgpu.module("root"));
-    exe.linkLibrary(zgpu.artifact("zdawn"));
-
+    const wgpu_native = b.dependency("wgpu_native", .{ .target = target, .optimize = optimize });
+    exe.root_module.addImport("wgpu", wgpu_native.module("wgpu"));
     const zglfw = b.dependency("zglfw", .{ .target = target, .optimize = optimize });
     exe.root_module.addImport("zglfw", zglfw.module("root"));
     exe.linkLibrary(zglfw.artifact("glfw"));
